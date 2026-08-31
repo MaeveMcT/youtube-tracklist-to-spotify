@@ -16,15 +16,22 @@ It chooses the strongest coherent timestamp list and updates the current track e
 
 This MVP does **not** yet call external tracklist databases. If a tracklist is only present in a comment, that comment must have been loaded by YouTube (scroll the comments if needed).
 
-## Install temporarily in Firefox
+## Build and install temporarily in Firefox
 
-1. Unzip this folder somewhere permanent for testing.
-2. Open `about:debugging#/runtime/this-firefox` in Firefox.
-3. Click **Load Temporary Add-on…**.
-4. Choose `manifest.json` from this folder.
-5. Open the extension popup once and copy the **Redirect URI** it shows.
+Requires Node.js 20.19 or newer, npm, and Firefox 140 or newer.
 
-Temporary extensions disappear when Firefox restarts. For daily use, sign/package the add-on later through Mozilla Add-ons.
+```bash
+npm ci
+npm run check
+npm run build
+```
+
+1. Open `about:debugging#/runtime/this-firefox` in Firefox.
+2. Click **Load Temporary Add-on…**.
+3. Choose `dist/manifest.json`.
+4. Open the extension popup once and copy the **Redirect URI** it shows.
+
+Temporary extensions disappear when Firefox restarts. See `BUILD.md` for development, packaging, and AMO submission instructions.
 
 ## Spotify setup
 
@@ -64,9 +71,12 @@ On click, the background script searches Spotify and only auto-adds when its sim
 - Low-confidence matches are deliberately not auto-added.
 - Spotify Development Mode/account restrictions may apply to your Spotify developer app.
 
-## Files
+## Project layout
 
-- `manifest.json` — Firefox Manifest V3 extension config
-- `content.js` / `content.css` — YouTube discovery, timestamp matching, floating UI
-- `background.js` — Spotify PKCE, token refresh, search, playlists, add-to-playlist
-- `popup.html` / `popup.js` / `popup.css` — Client ID, OAuth and playlist setup
+- `src/*.ts` — TypeScript content, background, and popup entry points
+- `assets/` — Firefox manifest, HTML, CSS, and icon
+- `scripts/` — build and AMO source-packaging scripts
+- `dist/` — generated temporary add-on (not committed)
+- `BUILD.md` — build, testing, packaging, and submission instructions
+- `PRIVACY.md` — extension privacy policy and AMO disclosure details
+- `AMO.md` — listing/reviewer notes and release checklist

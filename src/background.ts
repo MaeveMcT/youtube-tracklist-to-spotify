@@ -12,7 +12,7 @@ browser.tabs.onRemoved.addListener((tabId) => {
   tabSessions.delete(tabId);
 });
 
-browser.runtime.onMessage.addListener((message, sender) => {
+browser.runtime.onMessage.addListener(async (message, sender) => {
   const tabId = sender?.tab?.id;
   switch (message?.type) {
     case "tab-session:get": return getTabSession(tabId, message.videoId);
@@ -168,7 +168,7 @@ async function getAccessToken() {
   return updated.access_token;
 }
 
-async function spotifyFetch(path, options = {}) {
+async function spotifyFetch(path, options: RequestInit = {}) {
   const token = await getAccessToken();
   const headers = new Headers(options.headers || {});
   headers.set("Authorization", `Bearer ${token}`);

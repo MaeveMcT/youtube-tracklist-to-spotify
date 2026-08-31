@@ -1,99 +1,56 @@
-# Build and install instructions
+# Build, development, and AMO submission
 
 ## Requirements
 
-- Firefox
-- A Spotify Developer app / Client ID
-- `zip` if you want to create an install archive from the command line
+- Node.js 20.19 or newer (an active Node.js LTS release is recommended)
+- npm
+- Firefox 140 or newer (Firefox for Android 142 or newer)
+- `zip` (only for the AMO source archive)
 
-No Node.js, npm, bundler, transpiler, or build step is required. This extension is plain HTML/CSS/JavaScript.
-
-## Development install in Firefox
-
-1. Download and unzip the source folder.
-2. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
-3. Click **Load Temporary Add-on…**.
-4. Select the `manifest.json` file in the source folder.
-5. Open a YouTube video/set and click the extension icon.
-6. Configure the Spotify Client ID and redirect URI as described in `README.md`.
-
-When you edit `content.js`, `background.js`, `popup.js`, CSS, or HTML, return to `about:debugging` and click **Reload** for the extension.
-
-## Create a correctly structured ZIP
-
-The important rule is that `manifest.json` must be at the root of the ZIP, not inside a parent directory.
-
-From inside the source directory:
+## Reproducible setup and checks
 
 ```bash
-cd tracklist-to-spotify-firefox-source-v0.1.2
-zip -r ../tracklist-to-spotify-firefox-v0.1.2.zip \
-  manifest.json \
-  background.js \
-  content.js \
-  content.css \
-  popup.html \
-  popup.js \
-  popup.css \
-  README.md
+npm ci
+npm run check
 ```
 
-Verify the ZIP layout:
+`npm run check` type-checks the TypeScript, builds `dist/`, and runs Mozilla's `web-ext lint` against the built extension.
+
+## Load as a temporary add-on
 
 ```bash
-unzip -l ../tracklist-to-spotify-firefox-v0.1.2.zip
+npm run build
 ```
 
-You should see `manifest.json` directly in the archive root.
+Then open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on…**, and select `dist/manifest.json`. After rebuilding, click **Reload** on that page.
 
-## Optional validation
-
-Validate JSON:
+Useful development commands:
 
 ```bash
-python3 -m json.tool manifest.json >/dev/null
+npm run watch   # rebuild TypeScript when a source file changes
+npm start       # build and launch a Firefox profile with web-ext
 ```
 
-Check JavaScript syntax if Node.js is installed:
+Static extension files live in `assets/`; TypeScript lives in `src/`. The build copies static files and emits reviewable, non-minified JavaScript into `dist/`.
+
+## Create AMO upload archives
 
 ```bash
-node --check background.js
-node --check content.js
-node --check popup.js
+npm run package
+npm run package:source
 ```
 
-## Spotify setup
+The signed-add-on candidate and its corresponding source archive are written to `web-ext-artifacts/`. `manifest.json` is at the root of the add-on ZIP. The source archive includes the lockfile and these instructions so an AMO reviewer can reproduce the submitted code with `npm ci && npm run build`.
 
-1. Create an app in the Spotify Developer Dashboard.
-2. Enable Web API access.
-3. Load the extension once and copy the exact Redirect URI shown in its popup.
-4. Add that exact URI to the Spotify app's Redirect URIs.
-5. Copy the Spotify Client ID into the extension popup.
-6. Click **Connect Spotify** and approve access.
-7. Choose a target playlist.
+Before submitting a release:
 
-The extension uses Authorization Code with PKCE, so no Spotify Client Secret is stored in the extension.
+1. Keep the versions in `package.json` and `assets/manifest.json` identical.
+2. Run `npm ci && npm run check` from a clean checkout.
+3. Test Spotify login, playlist loading, track search, and adding a track in Firefox.
+4. Test YouTube single-page navigation and description/chapter/comment tracklists.
+5. Run both packaging commands and inspect both archives.
+6. Upload the extension ZIP to AMO and attach the source ZIP when requested.
+7. Complete AMO's data disclosures consistently with `PRIVACY.md` and the manifest categories.
+8. Supply listing copy, screenshots, support/contact links, and a hosted privacy-policy URL.
 
-## Project structure
-
-```text
-manifest.json    Firefox extension manifest
-background.js    Spotify OAuth/API calls and per-tab session state
-content.js       YouTube detection, tracklist parsing, timestamp matching, UI
-content.css      Injected YouTube card/button styling
-popup.html       Extension settings popup
-popup.js         Spotify connection and playlist selection UI
-popup.css        Popup styling
-README.md        Usage/setup overview
-BUILD.md         These build instructions
-```
-
-## Parser regression cases (v0.1.3)
-
-The parser now accepts a timestamp later in a line, for example:
-
-```text
-Trackliste 0:07 Headhunterz & Vertile - Before I Wake
-```
-
-It still supports explicit timestamp ranges and Markdown-linked YouTube timestamps.
+Do not commit `dist/`, `web-ext-artifacts/`, credentials, OAuth tokens, or a Spotify client secret.

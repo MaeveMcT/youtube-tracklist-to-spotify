@@ -1,6 +1,7 @@
 (() => {
-  if (window.__tracklistToSpotifyLoaded) return;
-  window.__tracklistToSpotifyLoaded = true;
+  const extensionWindow = window as typeof window & { __tracklistToSpotifyLoaded?: boolean };
+  if (extensionWindow.__tracklistToSpotifyLoaded) return;
+  extensionWindow.__tracklistToSpotifyLoaded = true;
 
   const state = {
     videoId: null,
@@ -99,7 +100,7 @@
   }
 
   function descriptionFromMeta() {
-    const el = document.querySelector("meta[name='description']");
+    const el = document.querySelector<HTMLMetaElement>("meta[name='description']");
     return el?.content || "";
   }
 
@@ -109,7 +110,7 @@
     if (meta.entries.length >= 2) candidates.push(meta);
 
     for (const [source, selector] of SOURCE_SELECTORS) {
-      const nodes = [...document.querySelectorAll(selector)];
+      const nodes = [...document.querySelectorAll<HTMLElement>(selector)];
       if (source === "comments") {
         for (const node of nodes.slice(0, 100)) {
           const c = parseBlock(node.innerText || node.textContent, source);
@@ -136,7 +137,7 @@
 
   function mergeCompatible(best, candidates) {
     // Prefer one coherent list. Merge only exact timestamps from other candidates when they fill gaps.
-    const map = new Map(best.entries.map(e => [e.seconds, e]));
+    const map = new Map<number, any>(best.entries.map(e => [e.seconds, e]));
     for (const c of candidates) {
       if (c === best || c.entries.length < 3) continue;
       let overlap = 0;
