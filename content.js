@@ -1,0 +1,337 @@
+(() => {
+  if (window.__tracklistToSpotifyLoaded) return;
+  window.__tracklistToSpotifyLoaded = true;
+
+  const state = {
+    videoId: null,
+    tracklist: [],
+    source: "",
+    currentTrack: null,
+    panel: null,
+    statusEl: null,
+    trackEl: null,
+    detailEl: null,
+    addBtn: null,
+    rescanTimer: null,
+    lastHref: location.href,
+    lastPublishedSignature: ""
+  };
+
+  const SOURCE_SELECTORS = [
+    ["description", "#description-inline-expander, ytd-text-inline-expander#description-inline-expander, #description ytd-text-inline-expander, #description"],
+    ["chapters", "ytd-macro-markers-list-renderer, ytd-engagement-panel-section-list-renderer[target-id*='chapters']"],
+    ["comments", "ytd-comment-thread-renderer #content-text, ytd-comment-view-model #content-text"]
+  ];
+
+  function videoIdFromUrl() {
+    try { return new URL(location.href).searchParams.get("v"); } catch { return null; }
+  }
+
+  function parseTimestamp(ts) {
+    const parts = ts.split(":").map(Number);
+    if (parts.some(Number.isNaN)) return null;
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return null;
+  }
+
+  function parseTrackLine(line) {
+    // YouTube descriptions can expose timestamps as Markdown-style links, e.g.
+    // [39:44](https://youtube.com/watch?...&t=2384s) - [41:04](...) - Artist - Track.
+    // Reduce timestamp links to their visible timestamp before parsing so URL/end-time
+    // material never contaminates the Spotify search text.
+    let normalized = String(line || "")
+      .replace(/\[((?:\d{1,2}:)?\d{1,2}:\d{2})\]\(https?:\/\/[^)]+\)/gi, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const timestamp = "((?:\\d{1,2}:)?\\d{1,2}:\\d{2})";
+    const separator = "\\s*(?:[-–—|•·]\\s*)";
+
+    // Some descriptions put a label before the first timestamp on the same line, e.g.
+    // "Trackliste 0:07 Artist - Track". Find the first valid timestamp token anywhere
+    // in the line, then discard only the prefix before it.
+    const firstTimestamp = normalized.match(new RegExp(`(?:^|\\s)${timestamp}(?=\\s|[-–—|•·:]|$)`));
+    if (!firstTimestamp) return null;
+    const timestampOffset = firstTimestamp.index + firstTimestamp[0].length - firstTimestamp[1].length;
+    normalized = normalized.slice(timestampOffset).trim();
+
+    // Explicit time range: START - END - Artist - Track
+    // START is the track start; END is retained for display/debugging only.
+    let m = normalized.match(new RegExp(`^${timestamp}${separator}${timestamp}${separator}(.+?)\\s*$`));
+    let startTs, endTs = null, raw;
+    if (m) {
+      startTs = m[1];
+      endTs = m[2];
+      raw = m[3].trim();
+    } else {
+      // Single timestamp: START - Artist - Track
+      m = normalized.match(new RegExp(`^${timestamp}\\s*(?:(?:[-–—|•·:]\\s*)?)(.+?)\\s*$`));
+      if (!m) return null;
+      startTs = m[1];
+      raw = m[2].trim();
+    }
+
+    const seconds = parseTimestamp(startTs);
+    const endSeconds = endTs ? parseTimestamp(endTs) : null;
+    raw = raw.replace(/^[-–—|•·:]\s*/, "").trim();
+    raw = raw.replace(/\s+(?:https?:\/\/\S+)$/i, "").trim();
+    if (seconds == null || !raw || raw.length > 240) return null;
+    if (endSeconds != null && endSeconds < seconds) return null;
+
+    let artist = "", title = raw;
+    const sep = raw.match(/^(.{1,100}?)\s+(?:[-–—]\s+|\|\s+)(.+)$/);
+    if (sep) { artist = sep[1].trim(); title = sep[2].trim(); }
+    return { seconds, timestamp: startTs, endSeconds, endTimestamp: endTs, raw, artist, title };
+  }
+
+  function parseBlock(text, source) {
+    const lines = String(text || "").split(/\n+/).map(s => s.trim()).filter(Boolean);
+    const entries = [];
+    for (const line of lines) {
+      const e = parseTrackLine(line);
+      if (e) entries.push(e);
+    }
+    const bySecond = new Map();
+    for (const e of entries) if (!bySecond.has(e.seconds)) bySecond.set(e.seconds, e);
+    const out = [...bySecond.values()].sort((a, b) => a.seconds - b.seconds);
+    return { source, entries: out };
+  }
+
+  function descriptionFromMeta() {
+    const el = document.querySelector("meta[name='description']");
+    return el?.content || "";
+  }
+
+  function collectCandidates() {
+    const candidates = [];
+    const meta = parseBlock(descriptionFromMeta(), "description metadata");
+    if (meta.entries.length >= 2) candidates.push(meta);
+
+    for (const [source, selector] of SOURCE_SELECTORS) {
+      const nodes = [...document.querySelectorAll(selector)];
+      if (source === "comments") {
+        for (const node of nodes.slice(0, 100)) {
+          const c = parseBlock(node.innerText || node.textContent, source);
+          if (c.entries.length >= 2) candidates.push(c);
+        }
+      } else {
+        for (const node of nodes.slice(0, 10)) {
+          const c = parseBlock(node.innerText || node.textContent, source);
+          if (c.entries.length >= 2) candidates.push(c);
+        }
+      }
+    }
+    return candidates;
+  }
+
+  function scoreCandidate(c) {
+    const count = c.entries.length;
+    const monotonic = c.entries.every((e, i) => i === 0 || e.seconds >= c.entries[i - 1].seconds);
+    const sourceBonus = c.source.startsWith("description") ? 80 : c.source === "chapters" ? 70 : 30;
+    const duration = document.querySelector("video")?.duration || 0;
+    const coverage = duration && c.entries.length ? Math.min(30, (c.entries[c.entries.length - 1].seconds / duration) * 30) : 0;
+    return count * 10 + sourceBonus + coverage + (monotonic ? 20 : 0);
+  }
+
+  function mergeCompatible(best, candidates) {
+    // Prefer one coherent list. Merge only exact timestamps from other candidates when they fill gaps.
+    const map = new Map(best.entries.map(e => [e.seconds, e]));
+    for (const c of candidates) {
+      if (c === best || c.entries.length < 3) continue;
+      let overlap = 0;
+      for (const e of c.entries) if (map.has(e.seconds)) overlap++;
+      if (overlap >= Math.min(3, Math.ceil(c.entries.length * 0.25))) {
+        for (const e of c.entries) if (!map.has(e.seconds)) map.set(e.seconds, e);
+      }
+    }
+    return [...map.values()].sort((a, b) => a.seconds - b.seconds);
+  }
+
+  function sessionSnapshot() {
+    return {
+      videoId: state.videoId,
+      href: location.href,
+      source: state.source,
+      tracklist: state.tracklist,
+      currentTrack: state.currentTrack
+    };
+  }
+
+  function publishTabSession(force = false) {
+    if (!state.videoId) return;
+    const signature = JSON.stringify([
+      state.videoId,
+      state.source,
+      state.tracklist.length,
+      state.currentTrack?.seconds ?? null,
+      state.currentTrack?.raw ?? ""
+    ]);
+    if (!force && signature === state.lastPublishedSignature) return;
+    state.lastPublishedSignature = signature;
+    browser.runtime.sendMessage({ type: "tab-session:update", session: sessionSnapshot() }).catch(() => {});
+  }
+
+  async function restoreTabSession() {
+    if (!state.videoId) return;
+    try {
+      const result = await browser.runtime.sendMessage({ type: "tab-session:get", videoId: state.videoId });
+      const saved = result?.session;
+      if (!saved || saved.videoId !== state.videoId) return;
+      state.tracklist = Array.isArray(saved.tracklist) ? saved.tracklist : [];
+      state.source = saved.source || "";
+      state.currentTrack = saved.currentTrack || null;
+      updateUI();
+    } catch {}
+  }
+
+  function discoverTracklist() {
+    const candidates = collectCandidates();
+    if (!candidates.length) {
+      state.tracklist = [];
+      state.source = "";
+      updateUI();
+      publishTabSession(true);
+      return;
+    }
+    candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+    const best = candidates[0];
+    state.tracklist = mergeCompatible(best, candidates);
+    state.source = best.source;
+    updateCurrentTrack();
+    publishTabSession(true);
+  }
+
+  function getCurrent(seconds) {
+    const list = state.tracklist;
+    if (!list.length) return null;
+    let lo = 0, hi = list.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid].seconds <= seconds) { ans = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    if (ans < 0) return null;
+    const e = list[ans];
+    return { ...e, index: ans, nextSeconds: list[ans + 1]?.seconds ?? null };
+  }
+
+  function ensurePanel() {
+    if (state.panel?.isConnected) return;
+    const panel = document.createElement("div");
+    panel.id = "tts-panel";
+    panel.innerHTML = `
+      <div class="tts-head"><span class="tts-logo">♫</span><span>Tracklist → Spotify</span><button class="tts-close" title="Hide">×</button></div>
+      <div class="tts-status">Scanning this video…</div>
+      <div class="tts-track">No tracklist yet</div>
+      <div class="tts-detail"></div>
+      <button class="tts-add" disabled>Add current track</button>
+      <div class="tts-feedback" aria-live="polite"></div>
+    `;
+    document.documentElement.appendChild(panel);
+    state.panel = panel;
+    state.statusEl = panel.querySelector(".tts-status");
+    state.trackEl = panel.querySelector(".tts-track");
+    state.detailEl = panel.querySelector(".tts-detail");
+    state.addBtn = panel.querySelector(".tts-add");
+    panel.querySelector(".tts-close").addEventListener("click", () => panel.remove());
+    state.addBtn.addEventListener("click", addCurrentTrack);
+  }
+
+  function updateCurrentTrack() {
+    const video = document.querySelector("video");
+    state.currentTrack = video ? getCurrent(video.currentTime || 0) : null;
+    updateUI();
+    publishTabSession();
+  }
+
+  function updateUI() {
+    ensurePanel();
+    const count = state.tracklist.length;
+    state.statusEl.textContent = count ? `${count} tracks detected · ${state.source}` : "No timestamped tracklist detected yet";
+    if (!state.currentTrack) {
+      state.trackEl.textContent = count ? "Before first timestamp" : "Scroll comments or open the description, then rescan";
+      state.detailEl.textContent = "";
+      state.addBtn.disabled = true;
+      return;
+    }
+    const t = state.currentTrack;
+    state.trackEl.textContent = t.raw;
+    const displayEnd = t.endSeconds ?? t.nextSeconds;
+    const end = displayEnd == null ? "end" : formatTime(displayEnd);
+    state.detailEl.textContent = `${formatTime(t.seconds)} → ${end} · track ${t.index + 1}/${count}`;
+    state.addBtn.disabled = false;
+    state.addBtn.textContent = "Add current track to Spotify";
+  }
+
+  async function addCurrentTrack() {
+    const feedback = state.panel.querySelector(".tts-feedback");
+    const t = state.currentTrack;
+    if (!t) return;
+    state.addBtn.disabled = true;
+    state.addBtn.textContent = "Finding on Spotify…";
+    feedback.textContent = "";
+    try {
+      const result = await browser.runtime.sendMessage({ type: "spotify:search-track", track: t });
+      const best = result?.best;
+      if (!best) throw new Error("No Spotify match found for this track.");
+      if ((best.score ?? 0) < 0.55) {
+        throw new Error(`Low-confidence match: ${best.artists} — ${best.name}. Use the extension popup/settings for now rather than auto-adding it.`);
+      }
+      state.addBtn.textContent = `Adding ${best.name}…`;
+      const added = await browser.runtime.sendMessage({ type: "spotify:add-track", uri: best.uri });
+      feedback.textContent = `✓ Added ${best.artists} — ${best.name} to ${added.playlistName}`;
+      state.addBtn.textContent = "Added ✓";
+      setTimeout(() => { state.addBtn.textContent = "Add current track to Spotify"; state.addBtn.disabled = false; }, 1800);
+    } catch (err) {
+      feedback.textContent = `⚠ ${err?.message || err}`;
+      state.addBtn.textContent = "Add current track to Spotify";
+      state.addBtn.disabled = false;
+    }
+  }
+
+  function formatTime(sec) {
+    sec = Math.max(0, Math.floor(Number(sec) || 0));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function scheduleRescan(delay = 700) {
+    clearTimeout(state.rescanTimer);
+    state.rescanTimer = setTimeout(discoverTracklist, delay);
+  }
+
+  const observer = new MutationObserver(() => {
+    if (location.href !== state.lastHref) {
+      state.lastHref = location.href;
+      state.videoId = videoIdFromUrl();
+      state.tracklist = [];
+      state.source = "";
+      state.currentTrack = null;
+      state.lastPublishedSignature = "";
+      browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
+      scheduleRescan(900);
+      return;
+    }
+    if (!state.tracklist.length || document.querySelectorAll("ytd-comment-thread-renderer").length) scheduleRescan(900);
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  setInterval(() => {
+    if (location.href !== state.lastHref) {
+      state.lastHref = location.href;
+      state.videoId = videoIdFromUrl();
+      state.tracklist = [];
+      state.source = "";
+      state.currentTrack = null;
+      state.lastPublishedSignature = "";
+      browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
+      scheduleRescan(500);
+    }
+    updateCurrentTrack();
+  }, 1000);
+
+  state.videoId = videoIdFromUrl();
+  ensurePanel();
+  restoreTabSession().finally(() => scheduleRescan(400));
+})();

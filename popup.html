@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tracklist → Spotify</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <h1>Tracklist → Spotify</h1>
+    <p class="muted">Connect your Spotify developer app, then choose where discovered tracks should go.</p>
+
+    <label>Spotify Client ID
+      <div class="row"><input id="clientId" placeholder="Paste Client ID"><button id="saveClient">Save</button></div>
+    </label>
+
+    <label>Redirect URI for your Spotify app
+      <div class="row"><input id="redirectUri" readonly><button id="copyRedirect">Copy</button></div>
+    </label>
+    <p class="hint">Add this exact URI to your Spotify app's Redirect URIs before connecting.</p>
+
+    <div class="row actions">
+      <button id="connect" class="primary">Connect Spotify</button>
+      <button id="logout">Disconnect</button>
+    </div>
+    <div id="authStatus" class="status"></div>
+
+    <label>Destination playlist
+      <div class="row"><select id="playlist"><option value="">Connect Spotify first</option></select><button id="refresh">↻</button></div>
+    </label>
+    <div id="playlistStatus" class="status"></div>
+
+    <hr>
+    <p class="hint">On YouTube, the floating panel scans timestamped descriptions, chapters, and comments. If comments contain the tracklist, scroll far enough for that comment to load.</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
