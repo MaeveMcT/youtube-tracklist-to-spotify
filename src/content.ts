@@ -219,6 +219,12 @@
 
   function ensurePanel() {
     if (state.panel?.isConnected) return;
+
+    // Reloading an extension destroys its content-script context, but Firefox can
+    // leave DOM nodes injected by that context on the page. Remove those stale
+    // panels before wiring a fresh one to this context.
+    document.querySelectorAll("#tts-panel").forEach(panel => panel.remove());
+
     const panel = document.createElement("div");
     panel.id = "tts-panel";
     panel.innerHTML = `
