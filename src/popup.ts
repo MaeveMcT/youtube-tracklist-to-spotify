@@ -1,8 +1,21 @@
 const $ = (s) => document.querySelector(s);
 const clientId = $("#clientId"), redirectUri = $("#redirectUri"), connect = $("#connect"), logout = $("#logout");
 const authStatus = $("#authStatus"), playlist = $("#playlist"), playlistStatus = $("#playlistStatus");
+const showCard = $("#showCard"), cardStatus = $("#cardStatus");
 
 init().catch(showError);
+
+showCard.addEventListener("click", async () => {
+  cardStatus.textContent = "";
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id == null) throw new Error("No active tab found.");
+    await browser.tabs.sendMessage(tab.id, { type: "card:show" });
+    cardStatus.textContent = "✓ Card shown on this YouTube tab";
+  } catch {
+    cardStatus.textContent = "⚠ Open a supported YouTube video first.";
+  }
+});
 
 async function init() {
   const status = await browser.runtime.sendMessage({ type: "spotify:get-status" });

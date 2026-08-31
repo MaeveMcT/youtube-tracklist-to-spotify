@@ -241,7 +241,9 @@
     state.trackEl = panel.querySelector(".tts-track");
     state.detailEl = panel.querySelector(".tts-detail");
     state.addBtn = panel.querySelector(".tts-add");
-    panel.querySelector(".tts-close").addEventListener("click", () => panel.remove());
+    panel.querySelector(".tts-close").addEventListener("click", () => {
+      panel.hidden = true;
+    });
     state.addBtn.addEventListener("click", addCurrentTrack);
   }
 
@@ -307,6 +309,14 @@
     clearTimeout(state.rescanTimer);
     state.rescanTimer = setTimeout(discoverTracklist, delay);
   }
+
+  browser.runtime.onMessage.addListener(async (message) => {
+    if (message?.type !== "card:show") return undefined;
+    ensurePanel();
+    state.panel.hidden = false;
+    updateUI();
+    return { ok: true };
+  });
 
   const observer = new MutationObserver(() => {
     if (location.href !== state.lastHref) {
