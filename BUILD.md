@@ -1,11 +1,13 @@
 # Build, development, and AMO submission
 
-## Requirements
+## Requirements and build environment
 
-- Node.js 20.19 or newer (an active Node.js LTS release is recommended)
-- npm
-- Firefox 140 or newer (Firefox for Android 142 or newer)
-- `zip` (only for the AMO source archive)
+- [Node.js](https://nodejs.org/en/download) 24.x
+- npm 11.x (included with Node.js 24)
+- [Firefox](https://www.firefox.com/) 140 or newer for desktop testing
+- [`zip`](https://infozip.sourceforge.net/) (only for the AMO source archive)
+
+Release artifacts are built on macOS 26.5 ARM64 with Node.js 24.20.0 and npm 11.19.0. The build uses no OS-specific inputs and is also intended to reproduce in Mozilla's documented Ubuntu 24.04 ARM64 reviewer environment with Node.js 24 and npm 11. Firefox for Android is not currently supported or tested.
 
 ## Reproducible setup and checks
 
@@ -40,7 +42,14 @@ npm run package
 npm run package:source
 ```
 
-The signed-add-on candidate and its corresponding source archive are written to `web-ext-artifacts/`. `manifest.json` is at the root of the add-on ZIP. The source archive includes the lockfile and these instructions so an AMO reviewer can reproduce the submitted code with `npm ci && npm run build`.
+The signed-add-on candidate and its corresponding source archive are written to `web-ext-artifacts/`. `manifest.json` is at the root of the add-on ZIP. The source archive includes the lockfile and these instructions so an AMO reviewer can reproduce the submitted code with:
+
+```bash
+npm ci
+npm run build
+```
+
+The resulting `dist/` files must match the files in the submitted extension archive byte-for-byte.
 
 Before submitting a release:
 

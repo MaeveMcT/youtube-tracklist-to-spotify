@@ -20,7 +20,7 @@ This MVP does **not** yet call external tracklist databases. If a tracklist is o
 
 ## Build and install temporarily in Firefox
 
-Requires Node.js 20.19 or newer, npm, and Firefox 140 or newer.
+Requires Node.js 24, npm 11, and Firefox 140 or newer.
 
 ```bash
 npm ci
@@ -72,6 +72,8 @@ On click, the background script searches Spotify and only auto-adds when its sim
 - Bootlegs, mashups, IDs, aliases, and spelling differences can produce no match or a low-confidence match.
 - Low-confidence matches are deliberately not auto-added.
 - Spotify Development Mode/account restrictions may apply to your Spotify developer app.
+- Followed playlists that you cannot edit may appear in the selector; choose a playlist you own or collaborate on.
+- Firefox for Android is not currently supported or tested.
 
 ## Project layout
 

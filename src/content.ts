@@ -24,6 +24,7 @@
     ["chapters", "ytd-macro-markers-list-renderer, ytd-engagement-panel-section-list-renderer[target-id*='chapters']"],
     ["comments", "ytd-comment-thread-renderer #content-text, ytd-comment-view-model #content-text"]
   ];
+  const SOURCE_MUTATION_SELECTOR = SOURCE_SELECTORS.map(([, selector]) => selector).join(",");
 
   function videoIdFromUrl() {
     try { return new URL(location.href).searchParams.get("v"); } catch { return null; }
@@ -125,6 +126,20 @@
       }
     }
     return candidates;
+  }
+
+  function mutationTouchesTracklist(records) {
+    const touchesSource = (node) => {
+      const element = node instanceof Element ? node : node.parentElement;
+      return Boolean(element && (
+        element.matches(SOURCE_MUTATION_SELECTOR) ||
+        element.closest(SOURCE_MUTATION_SELECTOR) ||
+        element.querySelector(SOURCE_MUTATION_SELECTOR)
+      ));
+    };
+    return records.some(record =>
+      touchesSource(record.target) || [...record.addedNodes].some(touchesSource)
+    );
   }
 
   function scoreCandidate(c) {
@@ -316,7 +331,7 @@
       const best = result?.best;
       if (!best) throw new Error("No Spotify match found for this track.");
       if ((best.score ?? 0) < 0.55) {
-        throw new Error(`Low-confidence match: ${best.artists} — ${best.name}. Use the extension popup/settings for now rather than auto-adding it.`);
+        throw new Error(`Low-confidence match: ${best.artists} — ${best.name}. The track was not added.`);
       }
       state.addBtn.textContent = `Adding ${best.name}…`;
       const added = await browser.runtime.sendMessage({ type: "spotify:add-track", uri: best.uri });
@@ -341,6 +356,17 @@
     state.rescanTimer = setTimeout(discoverTracklist, delay);
   }
 
+  function resetForNavigation(rescanDelay) {
+    state.lastHref = location.href;
+    state.videoId = videoIdFromUrl();
+    state.tracklist = [];
+    state.source = "";
+    state.currentTrack = null;
+    state.lastPublishedSignature = "";
+    browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
+    scheduleRescan(rescanDelay);
+  }
+
   browser.runtime.onMessage.addListener(async (message) => {
     if (message?.type !== "card:show") return undefined;
     ensurePanel();
@@ -349,34 +375,18 @@
     return { ok: true };
   });
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((records) => {
     ensurePlayerButton();
     if (location.href !== state.lastHref) {
-      state.lastHref = location.href;
-      state.videoId = videoIdFromUrl();
-      state.tracklist = [];
-      state.source = "";
-      state.currentTrack = null;
-      state.lastPublishedSignature = "";
-      browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
-      scheduleRescan(900);
+      resetForNavigation(900);
       return;
     }
-    if (!state.tracklist.length || document.querySelectorAll("ytd-comment-thread-renderer").length) scheduleRescan(900);
+    if (!state.tracklist.length || mutationTouchesTracklist(records)) scheduleRescan(900);
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   setInterval(() => {
-    if (location.href !== state.lastHref) {
-      state.lastHref = location.href;
-      state.videoId = videoIdFromUrl();
-      state.tracklist = [];
-      state.source = "";
-      state.currentTrack = null;
-      state.lastPublishedSignature = "";
-      browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
-      scheduleRescan(500);
-    }
+    if (location.href !== state.lastHref) resetForNavigation(500);
     updateCurrentTrack();
   }, 1000);
 

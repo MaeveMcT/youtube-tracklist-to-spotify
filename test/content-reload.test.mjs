@@ -3,6 +3,37 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { JSDOM, VirtualConsole } from "jsdom";
 
+test("detects documented timestamp formats from YouTube metadata", async () => {
+  const script = await readFile("dist/content.js", "utf8");
+  const dom = new JSDOM("<!doctype html><html><head><meta name=\"description\"></head><body></body></html>", {
+    runScripts: "outside-only",
+    virtualConsole: new VirtualConsole(),
+    url: "https://www.youtube.com/watch?v=parser-test",
+  });
+  dom.window.document.querySelector("meta[name='description']").content = [
+    "Trackliste 0:07 Artist One - Track One",
+    "[1:00](https://youtube.com/watch?v=parser-test&t=60s) - [2:00](https://youtube.com/watch?v=parser-test&t=120s) - Artist Two - Track Two",
+    "2:00 Artist Three - Track Three",
+  ].join("\n");
+  dom.window.browser = {
+    runtime: {
+      sendMessage: async (message) =>
+        message.type === "tab-session:get" ? { session: null } : { ok: true },
+      onMessage: { addListener: () => {} },
+    },
+  };
+
+  try {
+    dom.window.eval(script);
+    await new Promise(resolve => dom.window.setTimeout(resolve, 500));
+
+    assert.match(dom.window.document.querySelector(".tts-status").textContent, /^3 tracks detected/);
+    assert.equal(dom.window.document.querySelector(".tts-track").textContent, "Before first timestamp");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("closing the card keeps it hidden during subsequent updates", async () => {
   const script = await readFile("dist/content.js", "utf8");
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
