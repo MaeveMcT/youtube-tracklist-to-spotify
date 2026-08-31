@@ -13,6 +13,7 @@
     trackEl: null,
     detailEl: null,
     addBtn: null,
+    playerButton: null,
     rescanTimer: null,
     lastHref: location.href,
     lastPublishedSignature: ""
@@ -217,6 +218,36 @@
     return { ...e, index: ans, nextSeconds: list[ans + 1]?.seconds ?? null };
   }
 
+  function ensurePlayerButton() {
+    if (state.playerButton?.isConnected) return;
+    document.querySelectorAll("#tts-player-button").forEach(button => button.remove());
+
+    const settings = document.querySelector(".ytp-settings-button");
+    const controls = settings?.parentElement || document.querySelector(".ytp-right-controls");
+    if (!controls) return;
+
+    const button = document.createElement("button");
+    button.id = "tts-player-button";
+    button.className = "ytp-button";
+    button.type = "button";
+    button.title = "Toggle Tracklist → Spotify card";
+    button.setAttribute("aria-label", "Toggle Tracklist to Spotify card");
+    button.setAttribute("aria-controls", "tts-panel");
+    button.setAttribute("aria-expanded", "true");
+    button.innerHTML = `
+      <svg viewBox="4 4 30 30" aria-hidden="true">
+        <path fill="currentColor" d="M12 25a4 4 0 1 1-2-3.46V10l16-3v14a4 4 0 1 1-2-3.46v-6.9l-12 2.25V25Z"/>
+      </svg>
+    `;
+    button.addEventListener("click", () => {
+      ensurePanel();
+      state.panel.hidden = !state.panel.hidden;
+      button.setAttribute("aria-expanded", String(!state.panel.hidden));
+    });
+    controls.insertBefore(button, settings || null);
+    state.playerButton = button;
+  }
+
   function ensurePanel() {
     if (state.panel?.isConnected) return;
 
@@ -319,6 +350,7 @@
   });
 
   const observer = new MutationObserver(() => {
+    ensurePlayerButton();
     if (location.href !== state.lastHref) {
       state.lastHref = location.href;
       state.videoId = videoIdFromUrl();
@@ -349,6 +381,7 @@
   }, 1000);
 
   state.videoId = videoIdFromUrl();
+  ensurePlayerButton();
   ensurePanel();
   restoreTabSession().finally(() => scheduleRescan(400));
 })();

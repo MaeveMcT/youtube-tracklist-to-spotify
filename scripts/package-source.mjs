@@ -7,6 +7,7 @@ const files = [
   "src",
   "assets",
   "scripts",
+  "test",
   ".gitignore",
   "AMO.md",
   "BUILD.md",
