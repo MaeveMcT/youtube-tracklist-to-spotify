@@ -25,11 +25,11 @@ Setup requires your own Spotify developer Client ID and Spotify account. Spotify
 
 1. Build and load `dist/manifest.json` in Firefox 140 or newer.
 2. Open the extension popup and copy its redirect URI into a Spotify developer app.
-3. Enter the app's Client ID, connect a Spotify test account, and choose an editable playlist.
+3. Enter the app's public Client ID, connect the Spotify account that owns that developer app, and choose an editable playlist.
 4. Open the public YouTube test video supplied in the private AMO reviewer notes.
 5. Confirm that the card detects its timestamped tracklist, follows playback, and adds the current track to the chosen playlist.
 
-A Spotify Client ID, test account details if required, and a stable public test-video URL must be supplied privately in the AMO submission. Never commit credentials to this repository.
+This is a bring-your-own-account integration: the add-on developer does not operate a Spotify app, user service, or shared test account. Each user—including a reviewer—creates their own Spotify developer app and authenticates their own Spotify account. A Spotify client secret is neither needed nor accepted. The AMO submission should explain this architecture and provide the stable public test-video URL, but should not contain Spotify credentials. If a reviewer cannot use a third-party account, ask them to contact the developer through the AMO review thread so an alternative test can be coordinated.
 
 ## Data disclosure
 
@@ -39,7 +39,7 @@ Declare authentication information and website content as required data. Authent
 
 - The final extension ID is `youtube-tracklist-to-spotify@extension.local`; changing it changes the Spotify redirect URI and Firefox storage identity.
 - Use `https://github.com/MaeveMcT/youtube-tracklist-to-spotify/blob/main/PRIVACY.md` as the hosted privacy-policy URL.
-- Add private reviewer credentials and a stable public YouTube test video to the AMO submission notes.
+- Explain the bring-your-own-Spotify-account flow and add a stable public YouTube test video to the private AMO reviewer notes.
 - Confirm name/trademark presentation and listing artwork.
 - Select Firefox desktop only; Firefox for Android is not currently supported or tested.
 - Add at least one tested screenshot and complete AMO categories/tags.
