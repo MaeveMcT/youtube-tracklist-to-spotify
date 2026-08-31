@@ -230,8 +230,8 @@
     button.id = "tts-player-button";
     button.className = "ytp-button";
     button.type = "button";
-    button.title = "Toggle Tracklist → Spotify card";
-    button.setAttribute("aria-label", "Toggle Tracklist to Spotify card");
+    button.title = "Toggle YouTube Tracklist to Spotify card";
+    button.setAttribute("aria-label", "Toggle YouTube Tracklist to Spotify card");
     button.setAttribute("aria-controls", "tts-panel");
     button.setAttribute("aria-expanded", "true");
     button.innerHTML = `
@@ -259,7 +259,7 @@
     const panel = document.createElement("div");
     panel.id = "tts-panel";
     panel.innerHTML = `
-      <div class="tts-head"><span class="tts-logo">♫</span><span>Tracklist → Spotify</span><button class="tts-close" title="Hide">×</button></div>
+      <div class="tts-head"><span class="tts-logo">♫</span><span>YouTube Tracklist to Spotify</span><button class="tts-close" title="Hide">×</button></div>
       <div class="tts-status">Scanning this video…</div>
       <div class="tts-track">No tracklist yet</div>
       <div class="tts-detail"></div>

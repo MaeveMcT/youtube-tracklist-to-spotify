@@ -1,8 +1,10 @@
-# Tracklist → Spotify (Firefox MVP)
+# YouTube Tracklist to Spotify (Firefox MVP)
 
 **Version 0.1.3:** fixes timestamp detection when the first timestamp appears later in a line, such as `Trackliste 0:07 Artist - Track`. It retains v0.1.2 per-tab sessions and v0.1.1 explicit timestamp-range/Markdown-link parsing.
 
 A Firefox extension that detects timestamped DJ-set tracklists on the YouTube video currently open, shows the track corresponding to the current playback time, searches Spotify for it, and adds it to a user-selected playlist.
+
+Not affiliated with, endorsed by, or sponsored by YouTube or Spotify.
 
 ## What it detects
 

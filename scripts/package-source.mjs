@@ -2,7 +2,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 
 const manifest = JSON.parse(await readFile("assets/manifest.json", "utf8"));
-const output = `web-ext-artifacts/tracklist-to-spotify-${manifest.version}-source.zip`;
+const output = `web-ext-artifacts/youtube-tracklist-to-spotify-${manifest.version}-source.zip`;
 const files = [
   "src",
   "assets",

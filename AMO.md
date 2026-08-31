@@ -4,6 +4,8 @@
 
 Detect timestamped tracklists on YouTube DJ sets and add the currently playing track to a Spotify playlist.
 
+YouTube Tracklist to Spotify is not affiliated with, endorsed by, or sponsored by YouTube or Spotify.
+
 ## Reviewer notes
 
 - All executable source is in `src/` and is written in TypeScript.
@@ -19,7 +21,7 @@ Declare authentication information, search terms, and website content as require
 
 ## Release checklist
 
-- Choose a final extension ID before the first public release; changing it changes the Spotify redirect URI.
+- The final extension ID is `youtube-tracklist-to-spotify@extension.local`; changing it changes the Spotify redirect URI and Firefox storage identity.
 - Replace the placeholder contact sentence in `PRIVACY.md` with the actual public repository/support link.
 - Confirm name/trademark presentation and listing artwork.
 - Add at least one tested screenshot and complete AMO categories/tags.

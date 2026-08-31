@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Tracklist → Spotify",
+  "name": "YouTube Tracklist to Spotify",
   "version": "0.1.3",
   "description": "Detect timestamped DJ-set tracklists on YouTube and add the currently playing track to a Spotify playlist.",
   "permissions": ["storage", "identity", "activeTab"],
@@ -17,7 +17,7 @@
     "96": "icon.svg"
   },
   "action": {
-    "default_title": "Tracklist → Spotify",
+    "default_title": "YouTube Tracklist to Spotify",
     "default_popup": "popup.html",
     "default_icon": "icon.svg"
   },
@@ -31,7 +31,7 @@
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "tracklist-to-spotify@extension.local",
+      "id": "youtube-tracklist-to-spotify@extension.local",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": ["authenticationInfo", "searchTerms", "websiteContent"]

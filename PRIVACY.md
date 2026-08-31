@@ -1,6 +1,6 @@
 # Privacy policy
 
-Tracklist → Spotify does not send data to the extension developer and does not use analytics, advertising, or tracking.
+YouTube Tracklist to Spotify does not send data to the extension developer and does not use analytics, advertising, or tracking.
 
 ## Data handled by the extension
 

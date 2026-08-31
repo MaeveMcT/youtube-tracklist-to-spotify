@@ -11,7 +11,7 @@ test("the popup can show the card on the active YouTube tab", async () => {
   const dom = new JSDOM(html, {
     runScripts: "outside-only",
     virtualConsole: new VirtualConsole(),
-    url: "moz-extension://tracklist-to-spotify/popup.html",
+    url: "moz-extension://youtube-tracklist-to-spotify/popup.html",
   });
   const tabMessages = [];
 

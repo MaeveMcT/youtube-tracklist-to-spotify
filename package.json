@@ -1,5 +1,5 @@
 {
-  "name": "tracklist-to-spotify-firefox",
+  "name": "youtube-tracklist-to-spotify",
   "version": "0.1.3",
   "private": true,
   "description": "Firefox extension that detects YouTube tracklists and adds tracks to Spotify playlists.",
