@@ -3,6 +3,20 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { JSDOM, VirtualConsole } from "jsdom";
 
+test("the popup links new users to Spotify app setup", async () => {
+  const html = await readFile("assets/popup.html", "utf8");
+  const dom = new JSDOM(html);
+
+  try {
+    const link = dom.window.document.querySelector(".setup a");
+    assert.equal(link.href, "https://developer.spotify.com/dashboard");
+    assert.match(dom.window.document.querySelector(".setup").textContent, /Client ID/);
+    assert.match(dom.window.document.querySelector(".setup").textContent, /Redirect URI/);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("the popup can show the card on the active YouTube tab", async () => {
   const [html, script] = await Promise.all([
     readFile("assets/popup.html", "utf8"),

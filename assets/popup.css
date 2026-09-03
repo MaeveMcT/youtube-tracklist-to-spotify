@@ -2,7 +2,12 @@
 body { width: 390px; margin: 0; background:#151515; color:#eee; font:13px/1.4 system-ui, sans-serif; }
 main { padding:16px; }
 h1 { font-size:18px; margin:0 0 4px; }
+h2 { font-size:14px; margin:0 0 5px; }
 .muted,.hint { color:#aaa; }
+.setup { margin:12px 0; padding:10px 12px; border:1px solid #333; border-radius:8px; background:#1c1c1c; }
+.setup ol { margin:0; padding-left:20px; }
+.setup li + li { margin-top:4px; }
+a { color:#8ab4f8; }
 .hint { font-size:11px; margin-top:5px; }
 label { display:block; margin-top:14px; font-weight:650; }
 .row { display:flex; gap:7px; margin-top:5px; }

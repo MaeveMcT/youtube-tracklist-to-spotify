@@ -11,6 +11,16 @@
     <h1>YouTube Tracklist to Spotify</h1>
     <p class="muted">Connect your Spotify developer app, then choose where discovered tracks should go.</p>
 
+    <section class="setup" aria-labelledby="setup-title">
+      <h2 id="setup-title">First-time setup</h2>
+      <ol>
+        <li><a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">Create an app in the Spotify Developer Dashboard</a>.</li>
+        <li>Copy its Client ID into the field below and save it.</li>
+        <li>Copy the Redirect URI below into the app's Redirect URIs.</li>
+        <li>Click Connect Spotify and approve access.</li>
+      </ol>
+    </section>
+
     <button id="showCard" class="primary">Show YouTube card</button>
     <div id="cardStatus" class="status"></div>
 
