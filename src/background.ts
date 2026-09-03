@@ -25,7 +25,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     case "spotify:get-playlists": return getPlaylists();
     case "spotify:set-playlist": return setPlaylist(message.playlistId, message.playlistName);
     case "spotify:search-track": return searchTrack(message.track);
-    case "spotify:add-track": return addTrack(message.uri);
+    case "spotify:add-track": return addTrack(message.uri, Boolean(message.allowDuplicate));
     case "spotify:get-redirect-uri": return { redirectUri: browser.identity.getRedirectURL() };
     default: return undefined;
   }
@@ -292,15 +292,29 @@ function scoreCandidate(track, item) {
   return score;
 }
 
-async function addTrack(uri) {
+async function playlistContainsTrack(playlistId, uri) {
+  for (let offset = 0; offset < 10_000; offset += 100) {
+    const fields = encodeURIComponent("items(track(uri)),next");
+    const body = await spotifyFetch(`/playlists/${encodeURIComponent(playlistId)}/items?fields=${fields}&limit=100&offset=${offset}`);
+    if ((body?.items || []).some(item => item?.track?.uri === uri)) return true;
+    if (!body?.next) return false;
+  }
+  return false;
+}
+
+async function addTrack(uri, allowDuplicate = false) {
   const { spotifyPlaylistId, spotifyPlaylistName } = await browser.storage.local.get(["spotifyPlaylistId", "spotifyPlaylistName"]);
   if (!spotifyPlaylistId) throw new Error("Choose a Spotify playlist in the extension popup first.");
   if (!uri) throw new Error("No Spotify track selected.");
+  const playlistName = spotifyPlaylistName || "playlist";
+  if (!allowDuplicate && await playlistContainsTrack(spotifyPlaylistId, uri)) {
+    return { ok: false, duplicate: true, playlistName };
+  }
   await spotifyFetch(`/playlists/${encodeURIComponent(spotifyPlaylistId)}/items`, {
     method: "POST",
     body: JSON.stringify({ uris: [uri] })
   });
-  return { ok: true, playlistName: spotifyPlaylistName || "playlist" };
+  return { ok: true, duplicate: false, playlistName };
 }
 
 function randomString(length) {

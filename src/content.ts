@@ -27,7 +27,8 @@
     rescanTimer: null,
     lastHref: location.href,
     lastPublishedSignature: "",
-    pendingMatch: null
+    pendingMatch: null,
+    pendingDuplicate: null
   };
 
   const SOURCE_SELECTORS = [
@@ -348,17 +349,31 @@
     const end = displayEnd == null ? "end" : formatTime(displayEnd);
     state.detailEl.textContent = `${formatTime(t.seconds)} → ${end} · track ${t.index + 1}/${count}`;
     state.addBtn.disabled = false;
-    state.addBtn.textContent = state.pendingMatch?.trackRaw === t.raw
-      ? `Add ${state.pendingMatch.name} anyway`
-      : "Add current track to Spotify";
+    state.addBtn.textContent = state.pendingDuplicate?.trackRaw === t.raw
+      ? "Add duplicate anyway"
+      : state.pendingMatch?.trackRaw === t.raw
+        ? `Add ${state.pendingMatch.name} anyway`
+        : "Add current track to Spotify";
   }
 
-  async function addMatchedTrack(match, feedback) {
+  async function addMatchedTrack(match, feedback, allowDuplicate = false) {
     state.addBtn.disabled = true;
     state.addBtn.textContent = `Adding ${match.name}…`;
-    const added = await browser.runtime.sendMessage({ type: "spotify:add-track", uri: match.uri });
+    const added = await browser.runtime.sendMessage({
+      type: "spotify:add-track",
+      uri: match.uri,
+      allowDuplicate
+    });
+    if (added.duplicate) {
+      state.pendingDuplicate = { ...match, trackRaw: state.currentTrack.raw };
+      feedback.textContent = `⚠ ${match.artists} — ${match.name} is already in ${added.playlistName}.`;
+      state.addBtn.textContent = "Add duplicate anyway";
+      state.addBtn.disabled = false;
+      return;
+    }
     feedback.textContent = `✓ Added ${match.artists} — ${match.name} to ${added.playlistName}`;
     state.pendingMatch = null;
+    state.pendingDuplicate = null;
     state.addBtn.textContent = "Added ✓";
     setTimeout(() => { state.addBtn.textContent = "Add current track to Spotify"; state.addBtn.disabled = false; }, 1800);
   }
@@ -368,6 +383,10 @@
     const t = state.currentTrack;
     if (!t) return;
     try {
+      if (state.pendingDuplicate?.trackRaw === t.raw) {
+        await addMatchedTrack(state.pendingDuplicate, feedback, true);
+        return;
+      }
       if (state.pendingMatch?.trackRaw === t.raw) {
         await addMatchedTrack(state.pendingMatch, feedback);
         return;
@@ -389,6 +408,7 @@
       await addMatchedTrack(best, feedback);
     } catch (err) {
       state.pendingMatch = null;
+      state.pendingDuplicate = null;
       feedback.textContent = `⚠ ${err?.message || err}`;
       state.addBtn.textContent = "Add current track to Spotify";
       state.addBtn.disabled = false;
@@ -414,6 +434,7 @@
     state.currentTrack = null;
     state.lastPublishedSignature = "";
     state.pendingMatch = null;
+    state.pendingDuplicate = null;
     browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
     scheduleRescan(rescanDelay);
   }
