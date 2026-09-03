@@ -3,6 +3,17 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { JSDOM, VirtualConsole } from "jsdom";
 
+test("positions a new card above YouTube's fullscreen controls", async () => {
+  const css = await readFile("assets/content.css", "utf8");
+  const dom = new JSDOM(`<!doctype html><html><head><style>${css}</style></head><body><div id="tts-panel"></div></body></html>`);
+
+  try {
+    assert.equal(dom.window.getComputedStyle(dom.window.document.querySelector("#tts-panel")).bottom, "72px");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("detects documented timestamp formats from YouTube metadata", async () => {
   const script = await readFile("dist/content.js", "utf8");
   const dom = new JSDOM("<!doctype html><html><head><meta name=\"description\"></head><body></body></html>", {
