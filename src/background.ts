@@ -294,9 +294,9 @@ function scoreCandidate(track, item) {
 
 async function playlistContainsTrack(playlistId, uri) {
   for (let offset = 0; offset < 10_000; offset += 100) {
-    const fields = encodeURIComponent("items(track(uri)),next");
+    const fields = encodeURIComponent("items(item(uri)),next");
     const body = await spotifyFetch(`/playlists/${encodeURIComponent(playlistId)}/items?fields=${fields}&limit=100&offset=${offset}`);
-    if ((body?.items || []).some(item => item?.track?.uri === uri)) return true;
+    if ((body?.items || []).some(playlistItem => playlistItem?.item?.uri === uri)) return true;
     if (!body?.next) return false;
   }
   return false;

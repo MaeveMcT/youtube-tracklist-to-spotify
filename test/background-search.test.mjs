@@ -38,11 +38,14 @@ test("checks a playlist for duplicates before adding a track", async () => {
   let postCount = 0;
   const { dom, sendMessage } = await loadBackground([], {
     storage: { spotifyPlaylistId: "playlist-id", spotifyPlaylistName: "DJ Sets" },
-    fetch: async (_url, init = {}) => {
+    fetch: async (url, init = {}) => {
       if (init.method === "POST") postCount++;
+      if (init.method !== "POST") {
+        assert.match(url, /fields=items\(item\(uri\)\)%2Cnext/);
+      }
       const body = init.method === "POST"
         ? { snapshot_id: "snapshot" }
-        : { items: [{ track: { uri: "spotify:track:duplicate" } }], next: null };
+        : { items: [{ item: { uri: "spotify:track:duplicate" } }], next: null };
       return new Response(JSON.stringify(body), { status: 200 });
     },
   });
