@@ -16,7 +16,8 @@
     playerButton: null,
     rescanTimer: null,
     lastHref: location.href,
-    lastPublishedSignature: ""
+    lastPublishedSignature: "",
+    pendingMatch: null
   };
 
   const SOURCE_SELECTORS = [
@@ -170,7 +171,7 @@
   function mergeCompatible(best, candidates) {
     // Prefer one coherent list. Merge only exact timestamps from other candidates when they fill gaps.
     const entryKey = e => `${e.seconds}\n${e.raw.toLowerCase()}`;
-    const map = new Map(best.entries.map(e => [entryKey(e), e]));
+    const map = new Map<string, any>(best.entries.map(e => [entryKey(e), e]));
     const knownSeconds = new Set(best.entries.map(e => e.seconds));
     for (const c of candidates) {
       if (c === best || c.entries.length < 3) continue;
@@ -337,29 +338,47 @@
     const end = displayEnd == null ? "end" : formatTime(displayEnd);
     state.detailEl.textContent = `${formatTime(t.seconds)} → ${end} · track ${t.index + 1}/${count}`;
     state.addBtn.disabled = false;
-    state.addBtn.textContent = "Add current track to Spotify";
+    state.addBtn.textContent = state.pendingMatch?.trackRaw === t.raw
+      ? `Add ${state.pendingMatch.name} anyway`
+      : "Add current track to Spotify";
+  }
+
+  async function addMatchedTrack(match, feedback) {
+    state.addBtn.disabled = true;
+    state.addBtn.textContent = `Adding ${match.name}…`;
+    const added = await browser.runtime.sendMessage({ type: "spotify:add-track", uri: match.uri });
+    feedback.textContent = `✓ Added ${match.artists} — ${match.name} to ${added.playlistName}`;
+    state.pendingMatch = null;
+    state.addBtn.textContent = "Added ✓";
+    setTimeout(() => { state.addBtn.textContent = "Add current track to Spotify"; state.addBtn.disabled = false; }, 1800);
   }
 
   async function addCurrentTrack() {
     const feedback = state.panel.querySelector(".tts-feedback");
     const t = state.currentTrack;
     if (!t) return;
-    state.addBtn.disabled = true;
-    state.addBtn.textContent = "Finding on Spotify…";
-    feedback.textContent = "";
     try {
+      if (state.pendingMatch?.trackRaw === t.raw) {
+        await addMatchedTrack(state.pendingMatch, feedback);
+        return;
+      }
+      state.pendingMatch = null;
+      state.addBtn.disabled = true;
+      state.addBtn.textContent = "Finding on Spotify…";
+      feedback.textContent = "";
       const result = await browser.runtime.sendMessage({ type: "spotify:search-track", track: t });
       const best = result?.best;
       if (!best) throw new Error("No Spotify match found for this track.");
       if ((best.score ?? 0) < 0.55) {
-        throw new Error(`Low-confidence match: ${best.artists} — ${best.name}. The track was not added.`);
+        state.pendingMatch = { ...best, trackRaw: t.raw };
+        feedback.textContent = `⚠ Low-confidence match: ${best.artists} — ${best.name}. Check it, then add anyway if correct.`;
+        state.addBtn.textContent = `Add ${best.name} anyway`;
+        state.addBtn.disabled = false;
+        return;
       }
-      state.addBtn.textContent = `Adding ${best.name}…`;
-      const added = await browser.runtime.sendMessage({ type: "spotify:add-track", uri: best.uri });
-      feedback.textContent = `✓ Added ${best.artists} — ${best.name} to ${added.playlistName}`;
-      state.addBtn.textContent = "Added ✓";
-      setTimeout(() => { state.addBtn.textContent = "Add current track to Spotify"; state.addBtn.disabled = false; }, 1800);
+      await addMatchedTrack(best, feedback);
     } catch (err) {
+      state.pendingMatch = null;
       feedback.textContent = `⚠ ${err?.message || err}`;
       state.addBtn.textContent = "Add current track to Spotify";
       state.addBtn.disabled = false;
@@ -384,6 +403,7 @@
     state.source = "";
     state.currentTrack = null;
     state.lastPublishedSignature = "";
+    state.pendingMatch = null;
     browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
     scheduleRescan(rescanDelay);
   }

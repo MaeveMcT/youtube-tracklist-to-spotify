@@ -69,6 +69,50 @@ test("detects mashup subtracks with inherited and explicit cue timestamps", asyn
   }
 });
 
+test("offers to add a low-confidence Spotify match anyway", async () => {
+  const script = await readFile("dist/content.js", "utf8");
+  const dom = new JSDOM(`<!doctype html><html><head>
+    <meta name="description" content="0:00 Artist - Track One&#10;1:00 Artist - Track Two">
+  </head><body><video></video></body></html>`, {
+    runScripts: "outside-only",
+    virtualConsole: new VirtualConsole(),
+    url: "https://www.youtube.com/watch?v=low-confidence-test",
+  });
+  const messages = [];
+  dom.window.browser = {
+    runtime: {
+      sendMessage: async message => {
+        messages.push(message);
+        if (message.type === "tab-session:get") return { session: null };
+        if (message.type === "spotify:search-track") return {
+          best: { uri: "spotify:track:low", name: "Possible Track", artists: "Possible Artist", score: 0.4 },
+        };
+        if (message.type === "spotify:add-track") return { playlistName: "DJ Sets" };
+        return { ok: true };
+      },
+      onMessage: { addListener: () => {} },
+    },
+  };
+
+  try {
+    dom.window.eval(script);
+    await new Promise(resolve => dom.window.setTimeout(resolve, 500));
+    const button = dom.window.document.querySelector(".tts-add");
+
+    button.click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.match(button.textContent, /Add Possible Track anyway/);
+    assert.equal(messages.some(message => message.type === "spotify:add-track"), false);
+
+    button.click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.equal(messages.find(message => message.type === "spotify:add-track")?.uri, "spotify:track:low");
+    assert.match(dom.window.document.querySelector(".tts-feedback").textContent, /Added Possible Artist/);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("closing the card keeps it hidden during subsequent updates", async () => {
   const script = await readFile("dist/content.js", "utf8");
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
