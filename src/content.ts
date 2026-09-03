@@ -1,4 +1,14 @@
 (() => {
+  type TrackEntry = {
+    seconds: number;
+    timestamp: string;
+    endSeconds: number | null;
+    endTimestamp: string | null;
+    raw: string;
+    artist: string;
+    title: string;
+  };
+
   const extensionWindow = window as typeof window & { __tracklistToSpotifyLoaded?: boolean };
   if (extensionWindow.__tracklistToSpotifyLoaded) return;
   extensionWindow.__tracklistToSpotifyLoaded = true;
@@ -39,7 +49,7 @@
     return null;
   }
 
-  function parseTrackLine(line) {
+  function parseTrackLine(line): TrackEntry | null {
     // YouTube descriptions can expose timestamps as Markdown-style links, e.g.
     // [39:44](https://youtube.com/watch?...&t=2384s) - [41:04](...) - Artist - Track.
     // Reduce timestamp links to their visible timestamp before parsing so URL/end-time
@@ -91,7 +101,7 @@
 
   function parseBlock(text, source) {
     const lines = String(text || "").split(/\n+/).map(s => s.trim()).filter(Boolean);
-    const entries = [];
+    const entries: TrackEntry[] = [];
     let previousTimestamp = null;
     for (const line of lines) {
       let e = parseTrackLine(line);
@@ -170,8 +180,8 @@
 
   function mergeCompatible(best, candidates) {
     // Prefer one coherent list. Merge only exact timestamps from other candidates when they fill gaps.
-    const entryKey = e => `${e.seconds}\n${e.raw.toLowerCase()}`;
-    const map = new Map<string, any>(best.entries.map(e => [entryKey(e), e]));
+    const entryKey = (e: TrackEntry) => `${e.seconds}\n${e.raw.toLowerCase()}`;
+    const map = new Map<string, TrackEntry>(best.entries.map(e => [entryKey(e), e]));
     const knownSeconds = new Set(best.entries.map(e => e.seconds));
     for (const c of candidates) {
       if (c === best || c.entries.length < 3) continue;

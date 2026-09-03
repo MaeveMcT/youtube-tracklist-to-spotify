@@ -11,7 +11,8 @@ Treat `dist/`, `web-ext-artifacts/`, and `node_modules/` as generated content. C
 1. Read the relevant source and its existing tests before editing.
 2. Keep changes narrow; preserve YouTube single-page navigation, extension-reload cleanup, and coexistence with controls injected by other extensions.
 3. Add or update a behavior-level test for regressions. Tests should exercise rendered DOM or extension-message boundaries rather than private implementation details.
-4. Run `npm run check`. Work is complete when TypeScript, Node tests, and `web-ext lint` all pass with no findings.
+4. Use precise TypeScript types; prefer `unknown` with narrowing at untrusted boundaries. Avoid `any`.
+5. Run `npm run check`. Work is complete when TypeScript, Node tests, and `web-ext lint` all pass with no findings.
 
 Use Node.js 24 and npm 11. Load `dist/manifest.json` from `about:debugging` for manual testing.
 
