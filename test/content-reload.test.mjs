@@ -34,6 +34,41 @@ test("detects documented timestamp formats from YouTube metadata", async () => {
   }
 });
 
+test("detects mashup subtracks with inherited and explicit cue timestamps", async () => {
+  const script = await readFile("dist/content.js", "utf8");
+  const dom = new JSDOM("<!doctype html><html><head><meta name=\"description\"></head><body><video></video></body></html>", {
+    runScripts: "outside-only",
+    virtualConsole: new VirtualConsole(),
+    url: "https://www.youtube.com/watch?v=subtrack-test",
+  });
+  dom.window.document.querySelector("meta[name='description']").content = [
+    "20:10 - 23:06 – Headhunterz & Vertile – Before I Wake (Headhunterz Meme Edit)",
+    "→ w/ Before I Wake (Dimension X Kick Edit) @ 21:32",
+    "23:06 - 25:33 – Porter Robinson ft. Bright Lights – Language",
+    "→ w/ Zedd ft. Foxes – Clarity (Acappella)",
+    "→ w/ Dimitri Vegas & Like Mike & Martin Garrix – Tremor (Sub Zero Project Remix) @ 24:46",
+    "→ w/ David Guetta vs. Benny Benassi – Satisfaction (Hardwell & Maddix Remix / Sub Zero Project Psycho Edit) @ 25:06",
+  ].join("\n");
+  const video = dom.window.document.querySelector("video");
+  Object.defineProperty(video, "currentTime", { value: 24 * 60 + 50, configurable: true });
+  dom.window.browser = {
+    runtime: {
+      sendMessage: async message => message.type === "tab-session:get" ? { session: null } : { ok: true },
+      onMessage: { addListener: () => {} },
+    },
+  };
+
+  try {
+    dom.window.eval(script);
+    await new Promise(resolve => dom.window.setTimeout(resolve, 1100));
+
+    assert.match(dom.window.document.querySelector(".tts-status").textContent, /^6 tracks detected/);
+    assert.match(dom.window.document.querySelector(".tts-track").textContent, /Tremor/);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("closing the card keeps it hidden during subsequent updates", async () => {
   const script = await readFile("dist/content.js", "utf8");
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {

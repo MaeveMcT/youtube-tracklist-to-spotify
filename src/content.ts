@@ -91,13 +91,29 @@
   function parseBlock(text, source) {
     const lines = String(text || "").split(/\n+/).map(s => s.trim()).filter(Boolean);
     const entries = [];
+    let previousTimestamp = null;
     for (const line of lines) {
-      const e = parseTrackLine(line);
-      if (e) entries.push(e);
+      let e = parseTrackLine(line);
+      if (!e && previousTimestamp && /^(?:[→↳➜]|(?:[-–—]>?))?\s*(?:w\/|with)\s+/i.test(line)) {
+        const subtrack = line
+          .replace(/^(?:[→↳➜]|(?:[-–—]>?))?\s*(?:w\/|with)\s+/i, "")
+          .trim();
+        const cue = subtrack.match(/\s+@\s*((?:\d{1,2}:)?\d{1,2}:\d{2})\s*$/);
+        const timestamp = cue?.[1] || previousTimestamp;
+        const raw = cue ? subtrack.slice(0, cue.index).trim() : subtrack;
+        e = parseTrackLine(`${timestamp} ${raw}`);
+      }
+      if (e) {
+        entries.push(e);
+        previousTimestamp = e.timestamp;
+      }
     }
-    const bySecond = new Map();
-    for (const e of entries) if (!bySecond.has(e.seconds)) bySecond.set(e.seconds, e);
-    const out = [...bySecond.values()].sort((a, b) => a.seconds - b.seconds);
+    const unique = new Map();
+    for (const e of entries) {
+      const key = `${e.seconds}\n${e.raw.toLowerCase()}`;
+      if (!unique.has(key)) unique.set(key, e);
+    }
+    const out = [...unique.values()].sort((a, b) => a.seconds - b.seconds);
     return { source, entries: out };
   }
 
@@ -153,13 +169,18 @@
 
   function mergeCompatible(best, candidates) {
     // Prefer one coherent list. Merge only exact timestamps from other candidates when they fill gaps.
-    const map = new Map<number, any>(best.entries.map(e => [e.seconds, e]));
+    const entryKey = e => `${e.seconds}\n${e.raw.toLowerCase()}`;
+    const map = new Map(best.entries.map(e => [entryKey(e), e]));
+    const knownSeconds = new Set(best.entries.map(e => e.seconds));
     for (const c of candidates) {
       if (c === best || c.entries.length < 3) continue;
       let overlap = 0;
-      for (const e of c.entries) if (map.has(e.seconds)) overlap++;
+      for (const e of c.entries) if (knownSeconds.has(e.seconds)) overlap++;
       if (overlap >= Math.min(3, Math.ceil(c.entries.length * 0.25))) {
-        for (const e of c.entries) if (!map.has(e.seconds)) map.set(e.seconds, e);
+        for (const e of c.entries) {
+          if (!map.has(entryKey(e))) map.set(entryKey(e), e);
+          knownSeconds.add(e.seconds);
+        }
       }
     }
     return [...map.values()].sort((a, b) => a.seconds - b.seconds);
