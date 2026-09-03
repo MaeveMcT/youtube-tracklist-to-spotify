@@ -263,11 +263,33 @@ function overlap(a, b) {
   let hit = 0; for (const x of A) if (B.has(x)) hit++;
   return hit / Math.max(A.size, B.size);
 }
+function versionTokens(s) {
+  const text = String(s || "");
+  const marker = /\b(?:bootleg|mashup|live edit|edit|refix|re-fixx|rekick|remix|vip|version)\b/i;
+  const sections = [...text.matchAll(/[\[(]([^\])]+)[\])]/g)]
+    .map(match => match[1])
+    .filter(section => marker.test(section));
+  if (!sections.length) {
+    const suffix = text.match(/\s[-–—]\s(.+)$/)?.[1] || "";
+    if (marker.test(suffix)) sections.push(suffix);
+  }
+  return tokens(sections.join(" "));
+}
+
 function scoreCandidate(track, item) {
   const itemArtists = (item.artists || []).map(a => a.name).join(" ");
   const titleScore = overlap(track.title || track.raw, item.name);
   const artistScore = track.artist ? overlap(track.artist, itemArtists) : 0.5;
-  return Math.min(1, titleScore * 0.68 + artistScore * 0.32);
+  let score = Math.min(1, titleScore * 0.68 + artistScore * 0.32);
+
+  const expectedVersion = versionTokens(track.title || track.raw);
+  if (expectedVersion.size) {
+    const candidateTokens = tokens(item.name);
+    let matched = 0;
+    for (const token of expectedVersion) if (candidateTokens.has(token)) matched++;
+    if (matched / expectedVersion.size < 0.6) score = Math.min(score, 0.5);
+  }
+  return score;
 }
 
 async function addTrack(uri) {
