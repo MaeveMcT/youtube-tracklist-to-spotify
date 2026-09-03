@@ -296,6 +296,46 @@
     state.playerButton = button;
   }
 
+  function makePanelDraggable(panel: HTMLElement, handle: HTMLElement) {
+    let drag: { pointerId: number; offsetX: number; offsetY: number; width: number; height: number } | null = null;
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || (event.target instanceof Element && event.target.closest("button"))) return;
+      const rect = panel.getBoundingClientRect();
+      drag = {
+        pointerId: event.pointerId,
+        offsetX: event.clientX - rect.left,
+        offsetY: event.clientY - rect.top,
+        width: rect.width,
+        height: rect.height
+      };
+      panel.style.left = `${rect.left}px`;
+      panel.style.top = `${rect.top}px`;
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+      handle.classList.add("tts-dragging");
+      handle.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const left = Math.max(0, Math.min(window.innerWidth - drag.width, event.clientX - drag.offsetX));
+      const top = Math.max(0, Math.min(window.innerHeight - drag.height, event.clientY - drag.offsetY));
+      panel.style.left = `${left}px`;
+      panel.style.top = `${top}px`;
+    });
+
+    const finishDragging = (event: PointerEvent) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      handle.releasePointerCapture?.(event.pointerId);
+      handle.classList.remove("tts-dragging");
+      drag = null;
+    };
+    handle.addEventListener("pointerup", finishDragging);
+    handle.addEventListener("pointercancel", finishDragging);
+  }
+
   function ensurePanel() {
     if (state.panel?.isConnected) return;
 
@@ -320,6 +360,7 @@
     state.trackEl = panel.querySelector(".tts-track");
     state.detailEl = panel.querySelector(".tts-detail");
     state.addBtn = panel.querySelector(".tts-add");
+    makePanelDraggable(panel, panel.querySelector<HTMLElement>(".tts-head"));
     panel.querySelector(".tts-close").addEventListener("click", () => {
       panel.hidden = true;
     });

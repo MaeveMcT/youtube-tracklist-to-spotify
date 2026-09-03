@@ -162,6 +162,42 @@ test("requires confirmation before adding a duplicate track", async () => {
   }
 });
 
+test("drags the card by its header so it can be moved away from player controls", async () => {
+  const script = await readFile("dist/content.js", "utf8");
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    runScripts: "outside-only",
+    virtualConsole: new VirtualConsole(),
+    url: "https://www.youtube.com/watch?v=drag-test",
+  });
+  dom.window.browser = {
+    runtime: {
+      sendMessage: async message => message.type === "tab-session:get" ? { session: null } : { ok: true },
+      onMessage: { addListener: () => {} },
+    },
+  };
+
+  try {
+    dom.window.eval(script);
+    const panel = dom.window.document.querySelector("#tts-panel");
+    const handle = panel.querySelector(".tts-head");
+    panel.getBoundingClientRect = () => ({
+      left: 100, top: 100, right: 430, bottom: 300, width: 330, height: 200, x: 100, y: 100,
+      toJSON: () => ({}),
+    });
+
+    handle.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true, clientX: 120, clientY: 120 }));
+    handle.dispatchEvent(new dom.window.MouseEvent("pointermove", { bubbles: true, clientX: 300, clientY: 260 }));
+    handle.dispatchEvent(new dom.window.MouseEvent("pointerup", { bubbles: true, clientX: 300, clientY: 260 }));
+
+    assert.equal(panel.style.left, "280px");
+    assert.equal(panel.style.top, "240px");
+    assert.equal(panel.style.right, "auto");
+    assert.equal(panel.style.bottom, "auto");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("closing the card keeps it hidden during subsequent updates", async () => {
   const script = await readFile("dist/content.js", "utf8");
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
