@@ -80,6 +80,50 @@ test("detects mashup subtracks with inherited and explicit cue timestamps", asyn
   }
 });
 
+test("merges newly loaded comment tracklists with tracks already detected", async () => {
+  const script = await readFile("dist/content.js", "utf8");
+  const dom = new JSDOM(`<!doctype html><html><body>
+    <div id="comments"><ytd-comment-thread-renderer><div id="content-text">
+      0:00 Artist One - Track One
+      1:00 Artist Two - Track Two
+    </div></ytd-comment-thread-renderer></div>
+    <video></video>
+  </body></html>`, {
+    runScripts: "outside-only",
+    virtualConsole: new VirtualConsole(),
+    url: "https://www.youtube.com/watch?v=comment-merge-test",
+  });
+  dom.window.browser = {
+    runtime: {
+      sendMessage: async message => message.type === "tab-session:get" ? { session: null } : { ok: true },
+      onMessage: { addListener: () => {} },
+    },
+  };
+
+  try {
+    dom.window.eval(script);
+    await new Promise(resolve => dom.window.setTimeout(resolve, 500));
+    assert.match(dom.window.document.querySelector(".tts-status").textContent, /^2 tracks detected/);
+
+    dom.window.document.querySelector("#comments").insertAdjacentHTML("beforeend", `
+      <ytd-comment-thread-renderer><div id="content-text">
+        2:00 Artist Three - Track Three
+        3:00 Artist Four - Track Four
+      </div></ytd-comment-thread-renderer>`);
+    dom.window.document.querySelector("ytd-comment-thread-renderer").remove();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 2000));
+
+    assert.match(
+      dom.window.document.querySelector(".tts-status").textContent,
+      /^4 tracks detected/,
+      `current track: ${dom.window.document.querySelector(".tts-track").textContent}`,
+    );
+    assert.equal(dom.window.document.querySelector(".tts-track").textContent, "Artist One - Track One");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("offers to add a low-confidence Spotify match anyway", async () => {
   const script = await readFile("dist/content.js", "utf8");
   const dom = new JSDOM(`<!doctype html><html><head>

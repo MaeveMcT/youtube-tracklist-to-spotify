@@ -180,19 +180,25 @@
   }
 
   function mergeCompatible(best, candidates) {
-    // Prefer one coherent list. Merge only exact timestamps from other candidates when they fill gaps.
+    // Prefer one coherent list. Add candidates that extend it with a disjoint time
+    // range, or that share enough timestamps to look like the same list.
     const entryKey = (e: TrackEntry) => `${e.seconds}\n${e.raw.toLowerCase()}`;
     const map = new Map<string, TrackEntry>(best.entries.map(e => [entryKey(e), e]));
-    const knownSeconds = new Set(best.entries.map(e => e.seconds));
+    const knownSeconds = new Set<number>(best.entries.map(e => e.seconds));
     for (const c of candidates) {
-      if (c === best || c.entries.length < 3) continue;
-      let overlap = 0;
-      for (const e of c.entries) if (knownSeconds.has(e.seconds)) overlap++;
-      if (overlap >= Math.min(3, Math.ceil(c.entries.length * 0.25))) {
-        for (const e of c.entries) {
-          if (!map.has(entryKey(e))) map.set(entryKey(e), e);
-          knownSeconds.add(e.seconds);
-        }
+      if (c === best || !c.entries.length) continue;
+      const candidateSeconds = new Set<number>(c.entries.map(e => e.seconds));
+      const overlap = [...candidateSeconds].filter(seconds => knownSeconds.has(seconds)).length;
+      const knownRange = [...knownSeconds].sort((a, b) => a - b);
+      const candidateRange = [...candidateSeconds].sort((a, b) => a - b);
+      const rangesAreDisjoint = candidateRange[candidateRange.length - 1] < knownRange[0]
+        || candidateRange[0] > knownRange[knownRange.length - 1];
+      const enoughOverlap = overlap >= Math.min(3, Math.ceil(candidateSeconds.size * 0.25));
+      if (!rangesAreDisjoint && !enoughOverlap) continue;
+
+      for (const e of c.entries) {
+        if (!map.has(entryKey(e))) map.set(entryKey(e), e);
+        knownSeconds.add(e.seconds);
       }
     }
     return [...map.values()].sort((a, b) => a.seconds - b.seconds);
@@ -237,6 +243,9 @@
 
   function discoverTracklist() {
     const candidates = collectCandidates();
+    if (state.tracklist.length) {
+      candidates.push({ source: state.source || "previous scan", entries: state.tracklist });
+    }
     if (!candidates.length) {
       state.tracklist = [];
       state.source = "";
