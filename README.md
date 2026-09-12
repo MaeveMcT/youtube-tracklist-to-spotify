@@ -56,11 +56,12 @@ Requested scopes:
 
 Open a YouTube DJ set. A small panel appears at the lower-right of the page. When a timestamped tracklist is detected it shows:
 
-- number of tracks detected
-- source (description / chapters / comments)
 - current track name
-- current track time range
-- **Add current track to Spotify** button
+- current track timestamp and position in the tracklist
+- a button to add to the default Spotify playlist
+- an **Add current track to…** picker for one-off destinations or changing the default playlist
+
+The playlist list is cached for 15 minutes and can be refreshed from the card or popup. The card can be moved by its top edge and resized from any corner.
 
 On click, the background script searches Spotify and only auto-adds when its simple artist/title match score is above the built-in confidence threshold.
 

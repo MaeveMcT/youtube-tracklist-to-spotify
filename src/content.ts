@@ -19,16 +19,22 @@
     source: "",
     currentTrack: null,
     panel: null,
-    statusEl: null,
     trackEl: null,
     detailEl: null,
     addBtn: null,
+    addToBtn: null,
+    playlistPicker: null,
+    playlistSelect: null,
+    playlistAddBtn: null,
+    defaultPlaylist: null,
+    playlistsLoaded: false,
     playerButton: null,
     rescanTimer: null,
     lastHref: location.href,
     lastPublishedSignature: "",
     pendingMatch: null,
-    pendingDuplicate: null
+    pendingDuplicate: null,
+    addedFeedbackTrackRaw: null
   };
 
   const SOURCE_SELECTORS = [
@@ -345,6 +351,66 @@
     handle.addEventListener("pointercancel", finishDragging);
   }
 
+  function makePanelResizable(panel: HTMLElement) {
+    const minimumWidth = 260;
+    const minimumHeight = 160;
+
+    for (const corner of ["nw", "ne", "sw", "se"]) {
+      const handle = panel.querySelector<HTMLElement>(`.tts-resize-${corner}`);
+      let resize: {
+        pointerId: number;
+        startX: number;
+        startY: number;
+        left: number;
+        top: number;
+        width: number;
+        height: number;
+      } | null = null;
+
+      handle.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        const rect = panel.getBoundingClientRect();
+        resize = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        };
+        panel.style.left = `${rect.left}px`;
+        panel.style.top = `${rect.top}px`;
+        panel.style.right = "auto";
+        panel.style.bottom = "auto";
+        handle.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      });
+
+      handle.addEventListener("pointermove", event => {
+        if (!resize || resize.pointerId !== event.pointerId) return;
+        const dx = event.clientX - resize.startX;
+        const dy = event.clientY - resize.startY;
+        const west = corner.includes("w");
+        const north = corner.includes("n");
+        const width = Math.max(minimumWidth, resize.width + (west ? -dx : dx));
+        const height = Math.max(minimumHeight, resize.height + (north ? -dy : dy));
+        panel.style.width = `${width}px`;
+        panel.style.height = `${height}px`;
+        panel.style.left = `${west ? resize.left + resize.width - width : resize.left}px`;
+        panel.style.top = `${north ? resize.top + resize.height - height : resize.top}px`;
+      });
+
+      const finishResizing = (event: PointerEvent) => {
+        if (!resize || resize.pointerId !== event.pointerId) return;
+        handle.releasePointerCapture?.(event.pointerId);
+        resize = null;
+      };
+      handle.addEventListener("pointerup", finishResizing);
+      handle.addEventListener("pointercancel", finishResizing);
+    }
+  }
+
   function ensurePanel() {
     if (state.panel?.isConnected) return;
 
@@ -356,29 +422,136 @@
     const panel = document.createElement("div");
     panel.id = "tts-panel";
     panel.innerHTML = `
-      <div class="tts-head"><span class="tts-logo">♫</span><span>YouTube Tracklist to Spotify</span><button class="tts-close" title="Hide">×</button></div>
-      <div class="tts-status">Scanning this video…</div>
+      <div class="tts-content">
+      <div class="tts-head" aria-label="Drag card"><button class="tts-close" title="Hide">×</button></div>
       <div class="tts-track">No tracklist yet</div>
       <div class="tts-detail"></div>
       <button class="tts-add" disabled>Add current track</button>
+      <button class="tts-add-to" disabled>Add current track to…</button>
+      <div class="tts-playlist-picker" hidden>
+        <label for="tts-playlist-select">Spotify playlist</label>
+        <div class="tts-playlist-row">
+          <select id="tts-playlist-select"><option value="">Loading playlists…</option></select>
+          <button class="tts-refresh-playlists" type="button" title="Refresh playlists" aria-label="Refresh Spotify playlists">↻</button>
+        </div>
+        <div class="tts-playlist-actions">
+          <button class="tts-add-selected" type="button" disabled>Add to selected</button>
+          <button class="tts-set-default" type="button" disabled>Set as default</button>
+        </div>
+        <div class="tts-playlist-status" aria-live="polite"></div>
+      </div>
       <div class="tts-feedback" aria-live="polite"></div>
+      </div>
+      <span class="tts-resize-handle tts-resize-nw" aria-hidden="true"></span>
+      <span class="tts-resize-handle tts-resize-ne" aria-hidden="true"></span>
+      <span class="tts-resize-handle tts-resize-sw" aria-hidden="true"></span>
+      <span class="tts-resize-handle tts-resize-se" aria-hidden="true"></span>
     `;
     document.documentElement.appendChild(panel);
     state.panel = panel;
-    state.statusEl = panel.querySelector(".tts-status");
     state.trackEl = panel.querySelector(".tts-track");
     state.detailEl = panel.querySelector(".tts-detail");
     state.addBtn = panel.querySelector(".tts-add");
+    state.addToBtn = panel.querySelector(".tts-add-to");
+    state.playlistPicker = panel.querySelector(".tts-playlist-picker");
+    state.playlistSelect = panel.querySelector("#tts-playlist-select");
+    state.playlistAddBtn = panel.querySelector(".tts-add-selected");
     makePanelDraggable(panel, panel.querySelector<HTMLElement>(".tts-head"));
+    makePanelResizable(panel);
     panel.querySelector(".tts-close").addEventListener("click", () => {
       panel.hidden = true;
     });
-    state.addBtn.addEventListener("click", addCurrentTrack);
+    state.addBtn.addEventListener("click", () => addCurrentTrack());
+    state.addToBtn.addEventListener("click", async () => {
+      state.playlistPicker.hidden = !state.playlistPicker.hidden;
+      if (!state.playlistPicker.hidden && !state.playlistsLoaded) await loadPlaylistPicker();
+    });
+    state.playlistSelect.addEventListener("change", updatePlaylistActions);
+    panel.querySelector(".tts-refresh-playlists").addEventListener("click", () => loadPlaylistPicker(true));
+    panel.querySelector(".tts-set-default").addEventListener("click", setSelectedPlaylistAsDefault);
+    state.playlistAddBtn.addEventListener("click", () => {
+      const destination = selectedPlaylist();
+      if (destination) addCurrentTrack(destination);
+    });
+  }
+
+  function selectedPlaylist() {
+    const option = state.playlistSelect?.selectedOptions[0];
+    return option?.value ? { id: option.value, name: option.textContent || "playlist" } : null;
+  }
+
+  function updatePlaylistActions() {
+    const selected = selectedPlaylist();
+    state.playlistAddBtn.disabled = !selected || !state.currentTrack;
+    state.panel.querySelector(".tts-set-default").disabled = !selected;
+    const pendingDuplicate = state.pendingDuplicate;
+    const pendingMatch = state.pendingMatch;
+    state.playlistAddBtn.textContent = selected
+      && pendingDuplicate?.trackRaw === state.currentTrack?.raw
+      && pendingDuplicate.playlistId === selected.id
+      ? "Add duplicate anyway"
+      : selected
+        && pendingMatch?.trackRaw === state.currentTrack?.raw
+        && pendingMatch.playlistId === selected.id
+        ? `Add ${pendingMatch.name} anyway`
+        : "Add to selected";
+  }
+
+  async function loadPlaylistPicker(forceRefresh = false) {
+    const statusEl = state.panel.querySelector(".tts-playlist-status");
+    statusEl.textContent = forceRefresh ? "Refreshing playlists…" : "Loading playlists…";
+    try {
+      const [data, status] = await Promise.all([
+        browser.runtime.sendMessage({ type: "spotify:get-playlists", forceRefresh }),
+        browser.runtime.sendMessage({ type: "spotify:get-status" })
+      ]);
+      state.defaultPlaylist = status.playlistId
+        ? { id: status.playlistId, name: status.playlistName || "playlist" }
+        : null;
+      state.playlistSelect.innerHTML = '<option value="">Choose a playlist…</option>';
+      for (const playlist of data.playlists || []) {
+        const option = document.createElement("option");
+        option.value = playlist.id;
+        option.textContent = playlist.name;
+        if (playlist.id === status.playlistId) option.selected = true;
+        state.playlistSelect.appendChild(option);
+      }
+      state.playlistsLoaded = true;
+      statusEl.textContent = state.defaultPlaylist
+        ? `Default: ${state.defaultPlaylist.name}`
+        : `${data.playlists?.length || 0} playlists found · choose a default`;
+      updatePlaylistActions();
+      updateUI();
+    } catch (err) {
+      statusEl.textContent = `⚠ ${err?.message || err}`;
+    }
+  }
+
+  async function setSelectedPlaylistAsDefault() {
+    const destination = selectedPlaylist();
+    if (!destination) return;
+    const statusEl = state.panel.querySelector(".tts-playlist-status");
+    try {
+      await browser.runtime.sendMessage({
+        type: "spotify:set-playlist",
+        playlistId: destination.id,
+        playlistName: destination.name
+      });
+      state.defaultPlaylist = destination;
+      statusEl.textContent = `✓ Default: ${destination.name}`;
+      updateUI();
+    } catch (err) {
+      statusEl.textContent = `⚠ ${err?.message || err}`;
+    }
   }
 
   function updateCurrentTrack() {
     const video = document.querySelector("video");
     state.currentTrack = video ? getCurrent(video.currentTime || 0) : null;
+    if (state.addedFeedbackTrackRaw && state.currentTrack?.raw !== state.addedFeedbackTrackRaw) {
+      state.panel?.querySelector(".tts-feedback").replaceChildren();
+      state.addedFeedbackTrackRaw = null;
+    }
     updateUI();
     publishTabSession();
   }
@@ -386,82 +559,104 @@
   function updateUI() {
     ensurePanel();
     const count = state.tracklist.length;
-    state.statusEl.textContent = count ? `${count} tracks detected · ${state.source}` : "No timestamped tracklist detected yet";
     if (!state.currentTrack) {
       state.trackEl.textContent = count ? "Before first timestamp" : "Scroll comments or open the description, then rescan";
       state.detailEl.textContent = "";
       state.addBtn.disabled = true;
+      state.addToBtn.disabled = true;
+      updatePlaylistActions();
       return;
     }
     const t = state.currentTrack;
     state.trackEl.textContent = t.raw;
-    const displayEnd = t.endSeconds ?? t.nextSeconds;
-    const end = displayEnd == null ? "end" : formatTime(displayEnd);
-    state.detailEl.textContent = `${formatTime(t.seconds)} → ${end} · track ${t.index + 1}/${count}`;
+    state.detailEl.textContent = `${formatTime(t.seconds)} · track ${t.index + 1}/${count}`;
     state.addBtn.disabled = false;
-    state.addBtn.textContent = state.pendingDuplicate?.trackRaw === t.raw
+    state.addToBtn.disabled = false;
+    updatePlaylistActions();
+    state.addBtn.textContent = state.pendingDuplicate?.trackRaw === t.raw && state.pendingDuplicate.defaultDestination
       ? "Add duplicate anyway"
-      : state.pendingMatch?.trackRaw === t.raw
+      : state.pendingMatch?.trackRaw === t.raw && !state.pendingMatch.playlistId
         ? `Add ${state.pendingMatch.name} anyway`
-        : "Add current track to Spotify";
+        : state.defaultPlaylist
+          ? `Add current track to ${state.defaultPlaylist.name}`
+          : "Add current track to Spotify";
   }
 
   async function addMatchedTrack(match, feedback, allowDuplicate = false) {
-    state.addBtn.disabled = true;
-    state.addBtn.textContent = `Adding ${match.name}…`;
+    const actionButton = match.defaultDestination || !match.playlistId
+      ? state.addBtn
+      : state.playlistAddBtn;
+    actionButton.disabled = true;
+    actionButton.textContent = `Adding ${match.name}…`;
     const added = await browser.runtime.sendMessage({
       type: "spotify:add-track",
       uri: match.uri,
-      allowDuplicate
+      allowDuplicate,
+      playlistId: match.playlistId || undefined,
+      playlistName: match.playlistName || undefined
     });
     if (added.duplicate) {
-      state.pendingDuplicate = { ...match, trackRaw: state.currentTrack.raw };
+      state.pendingDuplicate = {
+        ...match,
+        trackRaw: state.currentTrack.raw,
+        playlistId: added.playlistId,
+        playlistName: added.playlistName,
+        defaultDestination: !match.playlistId
+      };
       feedback.textContent = `⚠ ${match.artists} — ${match.name} is already in ${added.playlistName}.`;
-      state.addBtn.textContent = "Add duplicate anyway";
-      state.addBtn.disabled = false;
+      actionButton.textContent = "Add duplicate anyway";
+      actionButton.disabled = false;
       return;
     }
     feedback.textContent = `✓ Added ${match.artists} — ${match.name} to ${added.playlistName}`;
+    state.addedFeedbackTrackRaw = state.currentTrack.raw;
     state.pendingMatch = null;
     state.pendingDuplicate = null;
-    state.addBtn.textContent = "Added ✓";
-    setTimeout(() => { state.addBtn.textContent = "Add current track to Spotify"; state.addBtn.disabled = false; }, 1800);
+    actionButton.textContent = "Added ✓";
+    setTimeout(() => { updateUI(); }, 1800);
   }
 
-  async function addCurrentTrack() {
+  async function addCurrentTrack(destination = null) {
     const feedback = state.panel.querySelector(".tts-feedback");
     const t = state.currentTrack;
     if (!t) return;
+    const actionButton = destination ? state.playlistAddBtn : state.addBtn;
     try {
-      if (state.pendingDuplicate?.trackRaw === t.raw) {
+      const targetsDestination = pending => destination
+        ? pending?.playlistId === destination.id
+        : pending?.defaultDestination || !pending?.playlistId;
+      if (state.pendingDuplicate?.trackRaw === t.raw && targetsDestination(state.pendingDuplicate)) {
         await addMatchedTrack(state.pendingDuplicate, feedback, true);
         return;
       }
-      if (state.pendingMatch?.trackRaw === t.raw) {
+      if (state.pendingMatch?.trackRaw === t.raw && targetsDestination(state.pendingMatch)) {
         await addMatchedTrack(state.pendingMatch, feedback);
         return;
       }
       state.pendingMatch = null;
-      state.addBtn.disabled = true;
-      state.addBtn.textContent = "Finding on Spotify…";
+      actionButton.disabled = true;
+      actionButton.textContent = "Finding on Spotify…";
       feedback.textContent = "";
       const result = await browser.runtime.sendMessage({ type: "spotify:search-track", track: t });
       const best = result?.best;
       if (!best) throw new Error("No Spotify match found for this track.");
+      const targetedMatch = destination
+        ? { ...best, playlistId: destination.id, playlistName: destination.name }
+        : best;
       if ((best.score ?? 0) < 0.55) {
-        state.pendingMatch = { ...best, trackRaw: t.raw };
+        state.pendingMatch = { ...targetedMatch, trackRaw: t.raw };
         feedback.textContent = `⚠ Low-confidence match: ${best.artists} — ${best.name}. Check it, then add anyway if correct.`;
-        state.addBtn.textContent = `Add ${best.name} anyway`;
-        state.addBtn.disabled = false;
+        actionButton.textContent = `Add ${best.name} anyway`;
+        actionButton.disabled = false;
         return;
       }
-      await addMatchedTrack(best, feedback);
+      await addMatchedTrack(targetedMatch, feedback);
     } catch (err) {
       state.pendingMatch = null;
       state.pendingDuplicate = null;
       feedback.textContent = `⚠ ${err?.message || err}`;
-      state.addBtn.textContent = "Add current track to Spotify";
-      state.addBtn.disabled = false;
+      actionButton.textContent = destination ? "Add to selected" : "Add current track to Spotify";
+      actionButton.disabled = false;
     }
   }
 
@@ -485,6 +680,8 @@
     state.lastPublishedSignature = "";
     state.pendingMatch = null;
     state.pendingDuplicate = null;
+    state.addedFeedbackTrackRaw = null;
+    state.panel?.querySelector(".tts-feedback").replaceChildren();
     browser.runtime.sendMessage({ type: "tab-session:clear" }).catch(() => {});
     scheduleRescan(rescanDelay);
   }

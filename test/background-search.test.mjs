@@ -16,17 +16,22 @@ async function loadBackground(searchItems, options = {}) {
     status: 200,
     headers: { "Content-Type": "application/json" },
   }));
+  const storage = {
+    spotifyClientId: "client-id",
+    spotifyTokens: { access_token: "token", expires_at: Date.now() + 60_000 },
+    ...options.storage,
+  };
   dom.window.browser = {
     tabs: { onRemoved: { addListener: () => {} } },
     runtime: { onMessage: { addListener: listener => { onMessage = listener; } } },
     identity: { getRedirectURL: () => "https://example.test/callback" },
     storage: {
       local: {
-        get: async () => ({
-          spotifyClientId: "client-id",
-          spotifyTokens: { access_token: "token", expires_at: Date.now() + 60_000 },
-          ...options.storage,
-        }),
+        get: async () => ({ ...storage }),
+        set: async values => Object.assign(storage, values),
+        remove: async keys => {
+          for (const key of Array.isArray(keys) ? keys : [keys]) delete storage[key];
+        },
       },
     },
   };
@@ -62,6 +67,33 @@ test("checks a playlist for duplicates before adding a track", async () => {
     });
     assert.equal(added.duplicate, false);
     assert.equal(postCount, 1);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("caches Spotify playlists and only reloads them when refreshed", async () => {
+  let fetchCount = 0;
+  const { dom, sendMessage } = await loadBackground([], {
+    fetch: async () => {
+      fetchCount++;
+      return new Response(JSON.stringify({
+        items: [{ id: "playlist-1", name: "DJ Sets", owner: { display_name: "Maeve" } }],
+        next: null,
+      }), { status: 200 });
+    },
+  });
+
+  try {
+    const first = await sendMessage({ type: "spotify:get-playlists" });
+    const second = await sendMessage({ type: "spotify:get-playlists" });
+    const refreshed = await sendMessage({ type: "spotify:get-playlists", forceRefresh: true });
+
+    assert.equal(first.cached, false);
+    assert.equal(second.cached, true);
+    assert.equal(refreshed.cached, false);
+    assert.equal(fetchCount, 2);
+    assert.equal(second.playlists[0].name, "DJ Sets");
   } finally {
     dom.window.close();
   }

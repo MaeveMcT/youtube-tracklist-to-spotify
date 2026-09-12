@@ -16,7 +16,7 @@ test("positions a new card above YouTube's fullscreen controls", async () => {
 
 test("detects documented timestamp formats from YouTube metadata", async () => {
   const script = await readFile("dist/content.js", "utf8");
-  const dom = new JSDOM("<!doctype html><html><head><meta name=\"description\"></head><body></body></html>", {
+  const dom = new JSDOM("<!doctype html><html><head><meta name=\"description\"></head><body><video></video></body></html>", {
     runScripts: "outside-only",
     virtualConsole: new VirtualConsole(),
     url: "https://www.youtube.com/watch?v=parser-test",
@@ -33,13 +33,16 @@ test("detects documented timestamp formats from YouTube metadata", async () => {
       onMessage: { addListener: () => {} },
     },
   };
+  Object.defineProperty(dom.window.document.querySelector("video"), "currentTime", { value: 130, configurable: true });
 
   try {
     dom.window.eval(script);
     await new Promise(resolve => dom.window.setTimeout(resolve, 500));
 
-    assert.match(dom.window.document.querySelector(".tts-status").textContent, /^3 tracks detected/);
-    assert.equal(dom.window.document.querySelector(".tts-track").textContent, "Before first timestamp");
+    assert.equal(dom.window.document.querySelector(".tts-track").textContent, "Artist Three - Track Three");
+    assert.equal(dom.window.document.querySelector(".tts-detail").textContent, "2:00 · track 3/3");
+    assert.equal(dom.window.document.querySelector(".tts-status"), null);
+    assert.doesNotMatch(dom.window.document.querySelector("#tts-panel").textContent, /YouTube Tracklist to Spotify/);
   } finally {
     dom.window.close();
   }
@@ -73,8 +76,8 @@ test("detects mashup subtracks with inherited and explicit cue timestamps", asyn
     dom.window.eval(script);
     await new Promise(resolve => dom.window.setTimeout(resolve, 1100));
 
-    assert.match(dom.window.document.querySelector(".tts-status").textContent, /^6 tracks detected/);
     assert.match(dom.window.document.querySelector(".tts-track").textContent, /Tremor/);
+    assert.match(dom.window.document.querySelector(".tts-detail").textContent, /track 5\/6/);
   } finally {
     dom.window.close();
   }
@@ -103,7 +106,7 @@ test("merges newly loaded comment tracklists with tracks already detected", asyn
   try {
     dom.window.eval(script);
     await new Promise(resolve => dom.window.setTimeout(resolve, 500));
-    assert.match(dom.window.document.querySelector(".tts-status").textContent, /^2 tracks detected/);
+    assert.match(dom.window.document.querySelector(".tts-detail").textContent, /track 1\/2/);
 
     dom.window.document.querySelector("#comments").insertAdjacentHTML("beforeend", `
       <ytd-comment-thread-renderer><div id="content-text">
@@ -113,11 +116,7 @@ test("merges newly loaded comment tracklists with tracks already detected", asyn
     dom.window.document.querySelector("ytd-comment-thread-renderer").remove();
     await new Promise(resolve => dom.window.setTimeout(resolve, 2000));
 
-    assert.match(
-      dom.window.document.querySelector(".tts-status").textContent,
-      /^4 tracks detected/,
-      `current track: ${dom.window.document.querySelector(".tts-track").textContent}`,
-    );
+    assert.match(dom.window.document.querySelector(".tts-detail").textContent, /track 1\/4/);
     assert.equal(dom.window.document.querySelector(".tts-track").textContent, "Artist One - Track One");
   } finally {
     dom.window.close();
@@ -133,6 +132,8 @@ test("offers to add a low-confidence Spotify match anyway", async () => {
     virtualConsole: new VirtualConsole(),
     url: "https://www.youtube.com/watch?v=low-confidence-test",
   });
+  const video = dom.window.document.querySelector("video");
+  Object.defineProperty(video, "currentTime", { value: 0, writable: true, configurable: true });
   const messages = [];
   dom.window.browser = {
     runtime: {
@@ -163,6 +164,70 @@ test("offers to add a low-confidence Spotify match anyway", async () => {
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.equal(messages.find(message => message.type === "spotify:add-track")?.uri, "spotify:track:low");
     assert.match(dom.window.document.querySelector(".tts-feedback").textContent, /Added Possible Artist/);
+
+    video.currentTime = 61;
+    await new Promise(resolve => dom.window.setTimeout(resolve, 1100));
+    assert.equal(dom.window.document.querySelector(".tts-feedback").textContent, "");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("adds to a chosen playlist and changes the default from the card", async () => {
+  const script = await readFile("dist/content.js", "utf8");
+  const dom = new JSDOM(`<!doctype html><html><head>
+    <meta name="description" content="0:00 Artist - Track One&#10;1:00 Artist - Track Two">
+  </head><body><video></video></body></html>`, {
+    runScripts: "outside-only",
+    virtualConsole: new VirtualConsole(),
+    url: "https://www.youtube.com/watch?v=playlist-card-test",
+  });
+  const messages = [];
+  dom.window.browser = {
+    runtime: {
+      sendMessage: async message => {
+        messages.push(message);
+        if (message.type === "tab-session:get") return { session: null };
+        if (message.type === "spotify:get-status") return {
+          loggedIn: true, playlistId: "playlist-1", playlistName: "Default Mixes",
+        };
+        if (message.type === "spotify:get-playlists") return { playlists: [
+          { id: "playlist-1", name: "Default Mixes" },
+          { id: "playlist-2", name: "Friday Set" },
+        ] };
+        if (message.type === "spotify:search-track") return {
+          best: { uri: "spotify:track:one", name: "Track One", artists: "Artist", score: 1 },
+        };
+        if (message.type === "spotify:add-track") return {
+          ok: true, duplicate: false, playlistId: message.playlistId, playlistName: message.playlistName,
+        };
+        return { ok: true };
+      },
+      onMessage: { addListener: () => {} },
+    },
+  };
+
+  try {
+    dom.window.eval(script);
+    await new Promise(resolve => dom.window.setTimeout(resolve, 500));
+    dom.window.document.querySelector(".tts-add-to").click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+
+    const select = dom.window.document.querySelector("#tts-playlist-select");
+    select.value = "playlist-2";
+    select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    dom.window.document.querySelector(".tts-add-selected").click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+
+    const addMessage = messages.find(message => message.type === "spotify:add-track");
+    assert.equal(addMessage.playlistId, "playlist-2");
+    assert.equal(addMessage.playlistName, "Friday Set");
+
+    dom.window.document.querySelector(".tts-set-default").click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    const setMessage = messages.find(message => message.type === "spotify:set-playlist");
+    assert.equal(setMessage.playlistId, "playlist-2");
+    assert.match(dom.window.document.querySelector(".tts-add").textContent, /Friday Set/);
   } finally {
     dom.window.close();
   }
@@ -248,6 +313,42 @@ test("drags the card by its header so it can be moved away from player controls"
     assert.equal(panel.style.top, "240px");
     assert.equal(panel.style.right, "auto");
     assert.equal(panel.style.bottom, "auto");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("resizes the card by dragging its corners", async () => {
+  const script = await readFile("dist/content.js", "utf8");
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    runScripts: "outside-only",
+    virtualConsole: new VirtualConsole(),
+    url: "https://www.youtube.com/watch?v=resize-test",
+  });
+  dom.window.browser = {
+    runtime: {
+      sendMessage: async message => message.type === "tab-session:get" ? { session: null } : { ok: true },
+      onMessage: { addListener: () => {} },
+    },
+  };
+
+  try {
+    dom.window.eval(script);
+    const panel = dom.window.document.querySelector("#tts-panel");
+    panel.getBoundingClientRect = () => ({
+      left: 100, top: 100, right: 430, bottom: 300, width: 330, height: 200, x: 100, y: 100,
+      toJSON: () => ({}),
+    });
+    const handle = panel.querySelector(".tts-resize-nw");
+
+    handle.dispatchEvent(new dom.window.MouseEvent("pointerdown", { bubbles: true, clientX: 100, clientY: 100 }));
+    handle.dispatchEvent(new dom.window.MouseEvent("pointermove", { bubbles: true, clientX: 60, clientY: 70 }));
+    handle.dispatchEvent(new dom.window.MouseEvent("pointerup", { bubbles: true, clientX: 60, clientY: 70 }));
+
+    assert.equal(panel.style.width, "370px");
+    assert.equal(panel.style.height, "230px");
+    assert.equal(panel.style.left, "60px");
+    assert.equal(panel.style.top, "70px");
   } finally {
     dom.window.close();
   }

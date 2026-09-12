@@ -56,7 +56,7 @@ logout.addEventListener("click", async () => {
   logout.disabled = true;
 });
 
-$("#refresh").addEventListener("click", () => loadPlaylists().catch(showError));
+$("#refresh").addEventListener("click", () => loadPlaylists(null, true).catch(showError));
 playlist.addEventListener("change", async () => {
   const opt = playlist.selectedOptions[0];
   if (!opt?.value) return;
@@ -64,9 +64,9 @@ playlist.addEventListener("change", async () => {
   playlistStatus.textContent = `✓ Saving to ${opt.textContent}`;
 });
 
-async function loadPlaylists(selectedId = null) {
+async function loadPlaylists(selectedId = null, forceRefresh = false) {
   playlistStatus.textContent = "Loading playlists…";
-  const data = await browser.runtime.sendMessage({ type:"spotify:get-playlists" });
+  const data = await browser.runtime.sendMessage({ type:"spotify:get-playlists", forceRefresh });
   const status = await browser.runtime.sendMessage({ type:"spotify:get-status" });
   selectedId = selectedId || status.playlistId;
   playlist.innerHTML = '<option value="">Choose a playlist…</option>';

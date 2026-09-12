@@ -1,5 +1,6 @@
 const SPOTIFY_ACCOUNTS = "https://accounts.spotify.com";
 const SPOTIFY_API = "https://api.spotify.com/v1";
+const PLAYLIST_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
 const SCOPES = [
   "playlist-read-private",
   "playlist-modify-private",
@@ -22,10 +23,15 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
     case "spotify:set-client-id": return setClientId(message.clientId);
     case "spotify:login": return spotifyLogin();
     case "spotify:logout": return spotifyLogout();
-    case "spotify:get-playlists": return getPlaylists();
+    case "spotify:get-playlists": return getPlaylists(Boolean(message.forceRefresh));
     case "spotify:set-playlist": return setPlaylist(message.playlistId, message.playlistName);
     case "spotify:search-track": return searchTrack(message.track);
-    case "spotify:add-track": return addTrack(message.uri, Boolean(message.allowDuplicate));
+    case "spotify:add-track": return addTrack(
+      message.uri,
+      Boolean(message.allowDuplicate),
+      message.playlistId,
+      message.playlistName
+    );
     case "spotify:get-redirect-uri": return { redirectUri: browser.identity.getRedirectURL() };
     default: return undefined;
   }
@@ -128,12 +134,14 @@ async function spotifyLogin() {
   if (!tokenResponse.ok) throw new Error(tokenBody.error_description || tokenBody.error || "Spotify token exchange failed.");
 
   await saveTokens(tokenBody);
-  await browser.storage.local.remove(["spotifyPkceVerifier", "spotifyOauthState"]);
+  await browser.storage.local.remove(["spotifyPkceVerifier", "spotifyOauthState", "spotifyPlaylistsCache"]);
   return { ok: true };
 }
 
 async function spotifyLogout() {
-  await browser.storage.local.remove(["spotifyTokens", "spotifyPlaylistId", "spotifyPlaylistName"]);
+  await browser.storage.local.remove([
+    "spotifyTokens", "spotifyPlaylistId", "spotifyPlaylistName", "spotifyPlaylistsCache"
+  ]);
   return { ok: true };
 }
 
@@ -186,7 +194,14 @@ async function spotifyFetch(path, options: RequestInit = {}) {
   return body;
 }
 
-async function getPlaylists() {
+async function getPlaylists(forceRefresh = false) {
+  const { spotifyPlaylistsCache } = await browser.storage.local.get("spotifyPlaylistsCache");
+  if (!forceRefresh
+    && Array.isArray(spotifyPlaylistsCache?.playlists)
+    && Date.now() - Number(spotifyPlaylistsCache.fetchedAt || 0) < PLAYLIST_CACHE_MAX_AGE_MS) {
+    return { playlists: spotifyPlaylistsCache.playlists, cached: true };
+  }
+
   const all = [];
   let offset = 0;
   for (let page = 0; page < 20; page++) {
@@ -197,7 +212,8 @@ async function getPlaylists() {
     if (!body?.next) break;
     offset += 50;
   }
-  return { playlists: all };
+  await browser.storage.local.set({ spotifyPlaylistsCache: { playlists: all, fetchedAt: Date.now() } });
+  return { playlists: all, cached: false };
 }
 
 async function setPlaylist(playlistId, playlistName) {
@@ -302,19 +318,20 @@ async function playlistContainsTrack(playlistId, uri) {
   return false;
 }
 
-async function addTrack(uri, allowDuplicate = false) {
-  const { spotifyPlaylistId, spotifyPlaylistName } = await browser.storage.local.get(["spotifyPlaylistId", "spotifyPlaylistName"]);
-  if (!spotifyPlaylistId) throw new Error("Choose a Spotify playlist in the extension popup first.");
+async function addTrack(uri, allowDuplicate = false, requestedPlaylistId = null, requestedPlaylistName = null) {
+  const stored = await browser.storage.local.get(["spotifyPlaylistId", "spotifyPlaylistName"]);
+  const playlistId = String(requestedPlaylistId || stored.spotifyPlaylistId || "");
+  if (!playlistId) throw new Error("Choose a default Spotify playlist on the card first.");
   if (!uri) throw new Error("No Spotify track selected.");
-  const playlistName = spotifyPlaylistName || "playlist";
-  if (!allowDuplicate && await playlistContainsTrack(spotifyPlaylistId, uri)) {
-    return { ok: false, duplicate: true, playlistName };
+  const playlistName = String(requestedPlaylistName || (requestedPlaylistId ? "" : stored.spotifyPlaylistName) || "playlist");
+  if (!allowDuplicate && await playlistContainsTrack(playlistId, uri)) {
+    return { ok: false, duplicate: true, playlistId, playlistName };
   }
-  await spotifyFetch(`/playlists/${encodeURIComponent(spotifyPlaylistId)}/items`, {
+  await spotifyFetch(`/playlists/${encodeURIComponent(playlistId)}/items`, {
     method: "POST",
     body: JSON.stringify({ uris: [uri] })
   });
-  return { ok: true, duplicate: false, playlistName };
+  return { ok: true, duplicate: false, playlistId, playlistName };
 }
 
 function randomString(length) {
