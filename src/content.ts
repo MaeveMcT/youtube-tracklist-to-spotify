@@ -423,8 +423,10 @@
     panel.id = "tts-panel";
     panel.innerHTML = `
       <div class="tts-content">
-      <div class="tts-head" aria-label="Drag card"><button class="tts-close" title="Hide">×</button></div>
-      <div class="tts-track">No tracklist yet</div>
+      <div class="tts-head" aria-label="Drag card">
+        <div class="tts-track">No tracklist yet</div>
+        <button class="tts-close" title="Hide">×</button>
+      </div>
       <div class="tts-detail"></div>
       <button class="tts-add" disabled>Add current track</button>
       <button class="tts-add-to" disabled>Add current track to…</button>

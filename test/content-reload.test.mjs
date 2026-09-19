@@ -39,7 +39,9 @@ test("detects documented timestamp formats from YouTube metadata", async () => {
     dom.window.eval(script);
     await new Promise(resolve => dom.window.setTimeout(resolve, 500));
 
-    assert.equal(dom.window.document.querySelector(".tts-track").textContent, "Artist Three - Track Three");
+    const titleBar = dom.window.document.querySelector(".tts-head");
+    assert.equal(titleBar.querySelector(".tts-track").textContent, "Artist Three - Track Three");
+    assert.equal(titleBar.querySelector(".tts-close").textContent, "×");
     assert.equal(dom.window.document.querySelector(".tts-detail").textContent, "2:00 · track 3/3");
     assert.equal(dom.window.document.querySelector(".tts-status"), null);
     assert.doesNotMatch(dom.window.document.querySelector("#tts-panel").textContent, /YouTube Tracklist to Spotify/);
